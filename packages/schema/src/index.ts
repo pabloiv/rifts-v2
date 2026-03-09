@@ -255,6 +255,8 @@ export interface SkillGrant extends GrantBase {
   kind: 'grant_skill'
   skillId: Identifier
   basePercent?: number | null
+  bonus?: number | null
+  perLevelPercent?: number | null
   fixedTotal?: boolean
 }
 
@@ -262,6 +264,8 @@ export interface SkillChoiceGrant extends GrantBase {
   kind: 'grant_skill_choice'
   slot: ChoiceSlot
   basePercent?: number | null
+  bonus?: number | null
+  perLevelPercent?: number | null
   fixedTotal?: boolean
 }
 
@@ -415,6 +419,8 @@ export interface CompendiumSkill extends CompendiumEntityBase {
   kind: 'skill'
   category: string
   baseFormula?: string | null
+  basePercent?: number | null
+  perLevelPercent?: number | null
   repeatability: SkillRepeatability
   specialization?: SkillSpecializationRule | null
   prerequisites?: RequirementSet

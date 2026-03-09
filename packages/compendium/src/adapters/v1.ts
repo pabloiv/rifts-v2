@@ -12,6 +12,7 @@ import type {
   EquipmentSystemProfile,
   Grant,
   Modifier,
+  ProgressionTrack,
   RequirementSet,
   ResourcePoolDefinition,
   SkillRepeatability,
@@ -87,6 +88,13 @@ export interface V1OccRaw {
     attributes?: Record<string, number>
     notes?: string
   }
+  progression?: {
+    milestones?: Record<string, Array<{
+      target?: string
+      operation?: Modifier['operation']
+      value?: number
+    }>>
+  }
   resources?: {
     hp?: { perLevel?: string | null }
     sdc?: { base?: string | null }
@@ -110,7 +118,9 @@ export interface V1SkillRaw {
   category?: string
   base?: number | null
   perLevel?: number | null
-  requires?: string[]
+  requiresAll?: string[]
+  requiresAny?: string[]
+  requirementNotes?: string[]
   notes?: string
   metadata?: {
     repeatable?: string
@@ -339,6 +349,8 @@ function mapV1GrantedSkills(prefix: string, granted?: V1GrantedSkill[]): Grant[]
         kind: 'grant_skill_choice',
         slot: makeChoiceSlot(entry),
         basePercent: typeof entry.basePercent === 'number' ? entry.basePercent : null,
+        bonus: typeof entry.bonus === 'number' ? entry.bonus : null,
+        perLevelPercent: null,
         fixedTotal: Boolean(entry.fixedTotal),
         ...(notes ? { notes } : {}),
       } satisfies Grant
@@ -352,6 +364,8 @@ function mapV1GrantedSkills(prefix: string, granted?: V1GrantedSkill[]): Grant[]
       kind: 'grant_skill',
       skillId: entry.name,
       basePercent: typeof entry.basePercent === 'number' ? entry.basePercent : null,
+      bonus: typeof entry.bonus === 'number' ? entry.bonus : null,
+      perLevelPercent: null,
       fixedTotal: Boolean(entry.fixedTotal),
       ...(notes ? { notes } : {}),
     } satisfies Grant
@@ -370,11 +384,49 @@ function mapV1Requirements(raw?: V1OccRaw['requirements']): RequirementSet | und
   return Object.keys(next).length > 0 ? next : undefined
 }
 
+function mapV1SkillRequirements(raw: V1SkillRaw): RequirementSet | undefined {
+  const next: RequirementSet = {}
+  if (raw.requiresAll?.length) next.skillIdsAll = raw.requiresAll
+  if (raw.requiresAny?.length) next.skillIdsAny = raw.requiresAny
+  if (raw.requirementNotes?.length) next.notes = raw.requirementNotes
+  return Object.keys(next).length > 0 ? next : undefined
+}
+
 function mapV1Repeatability(raw?: string): SkillRepeatability {
   if (raw === 'free_text') return 'free_text'
   if (raw === 'option_set') return 'option_set'
   if (raw === 'by_related_skill') return 'by_related_skill'
   return 'single'
+}
+
+function mapV1Progression(prefix: string, progression?: V1OccRaw['progression']): ProgressionTrack[] {
+  const milestones = progression?.milestones
+  if (!milestones || typeof milestones !== 'object') return []
+
+  return Object.entries(milestones).flatMap(([levelKey, rawModifiers]) => {
+    const level = Number(levelKey)
+    if (!Number.isInteger(level) || level < 1 || !Array.isArray(rawModifiers) || rawModifiers.length === 0) {
+      return []
+    }
+    const modifiers = rawModifiers.flatMap((modifier, modifierIndex) => {
+      const value = modifier?.value
+      if (!modifier?.target || !modifier.operation || typeof value !== 'number' || !Number.isFinite(value)) return []
+      return [{
+        id: `${prefix}-progression-${level}-${modifierIndex}`,
+        target: modifier.target,
+        operation: modifier.operation,
+        value,
+        sourceLabel: `${prefix}@level${level}`,
+      } satisfies Modifier]
+    })
+    if (modifiers.length === 0) return []
+    return [{
+      id: `${prefix}-level-${level}`,
+      label: `${prefix} level ${level}`,
+      levels: [level],
+      modifiers,
+    } satisfies ProgressionTrack]
+  })
 }
 
 function mapDamageScale(raw?: string): DamageProfile['scale'] {
@@ -560,6 +612,8 @@ export function adaptV1OccLike(raw: V1OccRaw): CompendiumOcc | CompendiumRcc {
   if (raw.tags?.length) setIfPresent(entity, 'tags', raw.tags)
   if (raw.desc) setIfPresent(entity, 'summary', raw.desc)
   if (resourcePools.length) setIfPresent(entity, 'resourcePools', resourcePools)
+  const progression = mapV1Progression(raw.id, raw.progression)
+  if (progression.length) setIfPresent(entity, 'progression', progression)
   const requirements = mapV1Requirements(raw.requirements)
   if (requirements) setIfPresent(entity, 'requirements', requirements)
   if (notes.length) setIfPresent(entity, 'notes', notes)
@@ -578,6 +632,8 @@ export function adaptV1Skill(raw: V1SkillRaw): CompendiumSkill {
     category: raw.category ?? 'Uncategorized',
     repeatability: mapV1Repeatability(raw.metadata?.repeatable),
   }
+  if (typeof raw.base === 'number') skill.basePercent = raw.base
+  if (typeof raw.perLevel === 'number') skill.perLevelPercent = raw.perLevel
   if (typeof raw.base === 'number' && typeof raw.perLevel === 'number') {
     skill.baseFormula = `${raw.base}% + ${raw.perLevel}%/level`
   }
@@ -592,11 +648,8 @@ export function adaptV1Skill(raw: V1SkillRaw): CompendiumSkill {
     }
     skill.specialization = specialization
   }
-  if (raw.requires?.length) {
-    skill.prerequisites = {
-      skillIdsAll: raw.requires,
-    }
-  }
+  const prerequisites = mapV1SkillRequirements(raw)
+  if (prerequisites) skill.prerequisites = prerequisites
   return skill
 }
 

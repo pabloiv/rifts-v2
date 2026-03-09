@@ -11,20 +11,47 @@ async function readJson(filePath) {
   return JSON.parse(await readFile(filePath, 'utf8'))
 }
 
+function parseSkillRequirements(requirements = {}) {
+  const requiresAll = []
+  const requiresAny = []
+  const requirementNotes = []
+  const rawAll = Array.isArray(requirements.skills_all) ? requirements.skills_all : []
+  const rawAny = Array.isArray(requirements.skills_any) ? requirements.skills_any : []
+
+  for (const entry of rawAll) {
+    if (typeof entry !== 'string' || !entry.trim()) continue
+    const parts = entry.split(/\s+or\s+/i).map(part => part.trim()).filter(Boolean)
+    if (parts.length > 1) {
+      if (requiresAny.length === 0) requiresAny.push(...parts)
+      else requirementNotes.push(`Additional alternate prerequisite group: ${entry}`)
+      continue
+    }
+    requiresAll.push(entry)
+  }
+
+  for (const entry of rawAny) {
+    if (typeof entry !== 'string' || !entry.trim()) continue
+    requiresAny.push(entry)
+  }
+
+  return {
+    requiresAll,
+    requiresAny,
+    requirementNotes,
+  }
+}
+
 async function loadV1Skills(root) {
   const moduleUrl = pathToFileURL(path.join(root, 'src/data/skills.js')).href
   const mod = await import(moduleUrl)
   const normalizedSkills = typeof mod.getNormalizedSkills === 'function' ? mod.getNormalizedSkills() : []
   return normalizedSkills.map(skill => ({
+    ...parseSkillRequirements(skill.requirements),
     id: skill.id,
     name: skill.name,
     category: skill.category,
     base: skill.progression?.base_percent ?? null,
     perLevel: skill.progression?.per_level_percent ?? null,
-    requires: [
-      ...(skill.requirements?.skills_all ?? []),
-      ...((skill.requirements?.skills_any ?? []).length ? [] : []),
-    ],
     notes: skill.notes,
     metadata: {
       repeatable: skill.repeatable,
@@ -62,9 +89,14 @@ async function main() {
     console.log(`Name: ${resolved.name}`)
     console.log(`Pools: ${resolved.pools.map(pool => `${pool.label}:${pool.formula ?? pool.maxValue ?? '—'}`).join(', ') || 'none'}`)
     console.log(`Skills: ${resolved.skills.length}`)
+    console.log(`Skill samples: ${resolved.skills.slice(0, 3).map(skill => `${skill.name}:${skill.total ?? '—'}`).join(', ') || 'none'}`)
     console.log(`Equipment: ${resolved.equipment.length}`)
+    console.log(`Modifiers: ${resolved.modifiers.length}`)
     console.log(`Choices: ${resolved.availableChoices.length}`)
     console.log(`Validation: ${resolved.validation.length}`)
+    if (resolved.validation.length) {
+      console.log(`Validation messages: ${resolved.validation.map(issue => issue.message).join(' | ')}`)
+    }
   }
 }
 
