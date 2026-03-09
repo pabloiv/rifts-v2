@@ -1,0 +1,27 @@
+{
+  "name": "@rifts-v2/web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint src --ext .ts,.tsx",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node -e \"console.log('web tests not configured yet')\"",
+    "validate": "node -e \"console.log('web validation not configured yet')\""
+  },
+  "dependencies": {
+    "@rifts-v2/compendium": "0.1.0",
+    "@rifts-v2/rules-engine": "0.1.0",
+    "@rifts-v2/schema": "0.1.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "vite": "^7.3.1"
+  }
+}

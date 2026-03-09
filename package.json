@@ -1,0 +1,29 @@
+{
+  "name": "rifts-v2",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @rifts-v2/web",
+    "build": "npm run typecheck --workspaces && npm run build --workspace @rifts-v2/web",
+    "check": "npm run lint --workspaces && npm run typecheck --workspaces",
+    "lint": "npm run lint --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
+    "test": "npm run test --workspaces",
+    "validate": "npm run validate --workspaces",
+    "clean": "node ./scripts/clean.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/node": "^24.7.2",
+    "eslint": "^9.39.1",
+    "globals": "^16.5.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.0"
+  }
+}

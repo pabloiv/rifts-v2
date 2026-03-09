@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noEmit": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "verbatimModuleSyntax": true,
+    "useDefineForClassFields": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "baseUrl": ".",
+    "paths": {
+      "@rifts-v2/schema": [
+        "packages/schema/src/index.ts"
+      ],
+      "@rifts-v2/compendium": [
+        "packages/compendium/src/index.ts"
+      ],
+      "@rifts-v2/rules-engine": [
+        "packages/rules-engine/src/index.ts"
+      ]
+    }
+  }
+}
