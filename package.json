@@ -16,6 +16,7 @@
     "test": "npm run test --workspaces",
     "validate": "npm run validate --workspaces",
     "import:v1": "node ./scripts/import-v1-snapshot.mjs",
+    "generate:demo-snapshot": "node ./scripts/generate-browser-snapshot.mjs",
     "clean": "node ./scripts/clean.mjs"
   },
   "devDependencies": {

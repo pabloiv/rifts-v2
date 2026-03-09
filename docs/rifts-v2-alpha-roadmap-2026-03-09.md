@@ -10,7 +10,8 @@ Status:
   - `M1 Resolver Core`: complete
   - `M2 Powers and Magic`: complete for normalized import plus resolver output
   - `M3 Combat Surface`: complete
-  - `M4 Fixture Viewer App`: next
+  - `M4 Fixture Viewer App`: complete
+  - `M5 Editable Alpha`: next
 
 Related documents:
 - [rifts-v2-project-bible-2026-03-09.md](/home/pablo/rifts-v2/docs/rifts-v2-project-bible-2026-03-09.md)
@@ -106,6 +107,20 @@ Scope:
 Exit criteria:
 - browser UI can inspect imported fixture characters without editing JSON by hand
 
+Status:
+- Complete for alpha foundation
+- committed demo snapshot generation is in place for browser-safe testing
+- the web app now resolves imported fixtures in-browser and shows:
+  - compendium summary
+  - validation output
+  - available choices
+  - resources and modifiers
+  - skills
+  - powers
+  - spells
+  - attacks
+  - equipment
+
 ### M5. Editable Alpha
 
 Scope:
@@ -148,8 +163,8 @@ Not required before first testing:
 
 ## Current Immediate Sequence
 
-1. Build `M4` fixture viewer as the first browser-testable V2 surface.
-2. Build `M5` limited editor after the resolver output is trustworthy.
+1. Build `M5` limited editor on top of the fixture viewer and current resolver output.
+2. Keep parity fixtures current as the editable build document grows.
 
 ## Success Standard
 
