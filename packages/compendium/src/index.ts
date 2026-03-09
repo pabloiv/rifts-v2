@@ -7,6 +7,7 @@ const ENTITY_LABELS: EntityKind[] = [
   'skill',
   'spell',
   'power',
+  'attack',
   'equipment',
   'vehicle',
 ]

@@ -28,8 +28,8 @@ function App() {
 
         <article style={styles.card}>
           <h2 style={styles.cardTitle}>Resolver</h2>
-          <p style={styles.metric}>{starter.status}</p>
-          <p style={styles.cardCopy}>{starter.notes}</p>
+          <p style={styles.metric}>{starter.actorType}</p>
+          <p style={styles.cardCopy}>{starter.explanations[0]?.notes?.[0] ?? 'No resolver note available yet.'}</p>
         </article>
 
         <article style={styles.card}>
