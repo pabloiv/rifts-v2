@@ -29,16 +29,27 @@ type DemoSnapshot = {
 }
 
 type SurfaceMode = 'builder' | 'debug'
-type BuildStepId = 'identity' | 'path' | 'attributes' | 'skills' | 'powers' | 'equipment' | 'review'
+type BuildStepId = 'identity' | 'race' | 'occ' | 'attributes' | 'skills' | 'powers' | 'equipment' | 'sheet'
+
+const ALIGNMENTS = [
+  { id: 'principled', name: 'Principled', desc: 'Good. Rigid moral code. Protects the innocent, never breaks the law.' },
+  { id: 'scrupulous', name: 'Scrupulous', desc: 'Good. Bends rules for a greater good. Values all sentient life.' },
+  { id: 'unprincipled', name: 'Unprincipled', desc: 'Selfish. Works within laws but pursues personal gain.' },
+  { id: 'anarchist', name: 'Anarchist', desc: 'Selfish. Values personal freedom above all social structures.' },
+  { id: 'miscreant', name: 'Miscreant', desc: 'Evil. Pure self-interest with no regard for anyone.' },
+  { id: 'aberrant', name: 'Aberrant', desc: 'Evil. Ruthless and merciless but follows a twisted code of honor.' },
+  { id: 'diabolic', name: 'Diabolic', desc: 'Evil. Wanton cruelty and destruction for its own sake.' },
+]
 
 const BUILD_STEPS: Array<{ id: BuildStepId; label: string; blurb: string }> = [
-  { id: 'identity', label: 'Identity', blurb: 'Name, level, and alignment.' },
-  { id: 'path', label: 'Race and Class', blurb: 'Choose race, RCC, and OCC.' },
-  { id: 'attributes', label: 'Attributes', blurb: 'Set the attribute line.' },
-  { id: 'skills', label: 'Skills', blurb: 'Fill active skill slots.' },
-  { id: 'powers', label: 'Powers and Magic', blurb: 'Pick psionics and spells when relevant.' },
-  { id: 'equipment', label: 'Equipment', blurb: 'Build the starting loadout.' },
-  { id: 'review', label: 'Review', blurb: 'Check the resolved character.' },
+  { id: 'identity', label: 'IDENTITY', blurb: 'Character identity and alignment.' },
+  { id: 'race', label: 'RACE', blurb: 'Race and species selection.' },
+  { id: 'occ', label: 'O.C.C.', blurb: 'Occupational or racial character class.' },
+  { id: 'attributes', label: 'ATTRIBUTES', blurb: 'Physical and mental attributes.' },
+  { id: 'skills', label: 'SKILLS', blurb: 'Skills and training.' },
+  { id: 'powers', label: 'POWERS', blurb: 'Psionics, magic, and special powers.' },
+  { id: 'equipment', label: 'EQUIPMENT', blurb: 'Equipment and inventory.' },
+  { id: 'sheet', label: 'SHEET', blurb: 'Final character sheet.' },
 ]
 
 const demoSnapshot = snapshotData as DemoSnapshot
@@ -65,13 +76,26 @@ const entityStats = {
 function App() {
   const [mode, setMode] = useState<SurfaceMode>(() => window.location.hash === '#debug' ? 'debug' : 'builder')
   const [activeFixtureId, setActiveFixtureId] = useState<string | null>(null)
-  const [build, setBuild] = useState<CharacterBuild | null>(null)
+  const [build, setBuild] = useState<CharacterBuild | null>(createBlankBuild())
   const [activeStep, setActiveStep] = useState<BuildStepId>('identity')
 
   useEffect(() => {
     const hash = mode === 'debug' ? '#debug' : ''
     window.history.replaceState(null, '', `${window.location.pathname}${hash}`)
   }, [mode])
+
+  useEffect(() => {
+    if (!build?.raceId) return
+    const race = registry.byId.get(build.raceId)
+    if (race?.kind !== 'race') return
+    if (race.compatibility?.mode === 'rcc_required' && race.compatibility.requiredRccId && build.rccId !== race.compatibility.requiredRccId) {
+      setBuild(current => current ? {
+        ...current,
+        rccId: race.compatibility?.requiredRccId ?? null,
+        occId: null,
+      } : current)
+    }
+  }, [build?.raceId, build?.rccId])
 
   const resolved = build ? resolveCharacterBuild({ registry, build }) : null
 
@@ -91,26 +115,7 @@ function App() {
     setMode('builder')
   }
 
-  if (!build) {
-    return (
-      <main style={styles.page}>
-        <StartScreen
-          onNewBuild={startBlankBuild}
-          onLoadFixture={loadFixture}
-          onOpenDebug={() => {
-            const fallback = demoSnapshot.fixtures[0]
-            if (fallback) {
-              setActiveFixtureId(fallback.id)
-              setBuild(cloneBuild(fallback))
-            }
-            setMode('debug')
-          }}
-        />
-      </main>
-    )
-  }
-
-  if (!resolved) return null
+  if (!build || !resolved) return null
 
   return (
     <main style={styles.page}>
@@ -119,11 +124,7 @@ function App() {
         build={build}
         activeFixtureId={activeFixtureId}
         onNewBuild={startBlankBuild}
-        onLoadFixture={() => {
-          setBuild(null)
-          setActiveFixtureId(null)
-          setMode('builder')
-        }}
+        onLoadFixture={loadFixture}
         onToggleMode={nextMode => setMode(nextMode)}
       />
 
@@ -161,85 +162,6 @@ function App() {
   )
 }
 
-function StartScreen({
-  onNewBuild,
-  onLoadFixture,
-  onOpenDebug,
-}: {
-  onNewBuild: () => void
-  onLoadFixture: (_fixtureId: string) => void
-  onOpenDebug: () => void
-}) {
-  return (
-    <>
-      <section style={styles.hero}>
-        <div>
-          <p style={styles.eyebrow}>Rifts V2 Alpha</p>
-          <h1 style={styles.title}>Character Builder</h1>
-          <p style={styles.copy}>
-            This alpha is now centered on a guided creation flow instead of a raw rules inspector.
-            Start a new build, load a known example, and move through the process one decision at a time.
-          </p>
-          <div style={styles.heroActions}>
-            <button type="button" style={styles.primaryButton} onClick={onNewBuild}>
-              New Character
-            </button>
-            <button type="button" style={styles.secondaryButton} onClick={onOpenDebug}>
-              Open Debug Surface
-            </button>
-          </div>
-        </div>
-
-        <div style={styles.heroMeta}>
-          <div style={styles.metricBlock}>
-            <span style={styles.metricLabel}>Snapshot</span>
-            <span style={styles.metricValue}>{demoSnapshot.entityCount} entities</span>
-          </div>
-          <div style={styles.metricBlock}>
-            <span style={styles.metricLabel}>Generated</span>
-            <span style={styles.metricValue}>{formatTimestamp(demoSnapshot.generatedAt)}</span>
-          </div>
-        </div>
-      </section>
-
-      <section style={styles.startGrid}>
-        <article style={styles.panel}>
-          <h2 style={styles.panelTitle}>Load Example</h2>
-          <p style={styles.panelCopy}>Use a parity character to see how the new flow handles real game content.</p>
-          <div style={styles.fixtureList}>
-            {demoSnapshot.fixtures.map(fixture => (
-              <button
-                key={fixture.id}
-                type="button"
-                onClick={() => onLoadFixture(fixture.id)}
-                style={styles.fixtureButton}
-              >
-                <span style={styles.fixtureName}>{fixture.name}</span>
-                <span style={styles.fixtureMeta}>
-                  {fixture.raceId ?? 'No race'} / {fixture.rccId ?? fixture.occId ?? 'No class'} / level {fixture.level}
-                </span>
-              </button>
-            ))}
-          </div>
-        </article>
-
-        <article style={styles.panel}>
-          <h2 style={styles.panelTitle}>Snapshot Scope</h2>
-          <p style={styles.panelCopy}>This alpha is already resolving the same normalized compendium the future builder will consume.</p>
-          <div style={styles.statGrid}>
-            {Object.entries(entityStats).map(([label, value]) => (
-              <div key={label} style={styles.statCard}>
-                <span style={styles.statLabel}>{label.toUpperCase()}</span>
-                <span style={styles.statValue}>{value}</span>
-              </div>
-            ))}
-          </div>
-        </article>
-      </section>
-    </>
-  )
-}
-
 function AppHeader({
   mode,
   build,
@@ -252,14 +174,14 @@ function AppHeader({
   build: CharacterBuild
   activeFixtureId: string | null
   onNewBuild: () => void
-  onLoadFixture: () => void
+  onLoadFixture: (_fixtureId: string) => void
   onToggleMode: (_mode: SurfaceMode) => void
 }) {
   return (
     <section style={styles.headerBar}>
       <div>
         <p style={styles.eyebrow}>Rifts V2 Alpha</p>
-        <h1 style={styles.headerTitle}>{build.name || 'Untitled Character'}</h1>
+        <h1 style={styles.headerTitle}>{build.name || 'Unnamed Survivor'}</h1>
         <p style={styles.headerMeta}>
           {build.raceId ?? 'No race'} / {build.rccId ?? build.occId ?? 'No class'} / level {build.level}
           {activeFixtureId ? ` / fixture ${activeFixtureId}` : ' / working build'}
@@ -267,15 +189,25 @@ function AppHeader({
       </div>
 
       <div style={styles.headerActions}>
-        <button type="button" style={styles.secondaryButton} onClick={onLoadFixture}>
-          Home
-        </button>
         <button type="button" style={styles.secondaryButton} onClick={onNewBuild}>
           New Character
         </button>
+        <select
+          style={styles.headerSelect}
+          value={activeFixtureId ?? ''}
+          onChange={event => {
+            if (!event.target.value) return
+            onLoadFixture(event.target.value)
+          }}
+        >
+          <option value="">Load Example…</option>
+          {demoSnapshot.fixtures.map(fixture => (
+            <option key={fixture.id} value={fixture.id}>{fixture.name}</option>
+          ))}
+        </select>
         <button
           type="button"
-          style={mode === 'builder' ? styles.secondaryButton : styles.primaryButton}
+          style={mode === 'builder' ? styles.primaryButton : styles.secondaryButton}
           onClick={() => onToggleMode('builder')}
         >
           Builder
@@ -335,6 +267,9 @@ function BuilderShell({
           </button>
         ))}
       </section>
+      <div style={styles.stepHint}>
+        Jump between steps at any time. Earlier selections still control what later steps can offer or compute.
+      </div>
 
       <section style={styles.builderGrid}>
         <article style={styles.panelWide}>
@@ -401,8 +336,11 @@ function BuildStepContent({
   if (step === 'identity') {
     return <IdentityStep build={build} onChange={onChange} />
   }
-  if (step === 'path') {
-    return <PathStep build={build} resolved={resolved} onChange={onChange} />
+  if (step === 'race') {
+    return <RaceStep build={build} onChange={onChange} />
+  }
+  if (step === 'occ') {
+    return <OccStep build={build} resolved={resolved} onChange={onChange} />
   }
   if (step === 'attributes') {
     return <AttributesStep build={build} onChange={onChange} />
@@ -427,48 +365,97 @@ function IdentityStep({
   onChange: React.Dispatch<React.SetStateAction<CharacterBuild | null>>
 }) {
   return (
-    <div style={styles.formGrid}>
-      <label style={styles.field}>
-        <span style={styles.fieldLabel}>Character Name</span>
-        <input
-          style={styles.input}
-          value={build.name}
-          onChange={event => onChange(current => current ? { ...current, name: event.target.value } : current)}
-        />
-      </label>
+    <>
+      <div className="panel-title" style={styles.v1PanelTitle}>// CHARACTER IDENTITY</div>
+      <input
+        style={styles.nameInput}
+        placeholder="Enter character name..."
+        value={build.name}
+        onChange={event => onChange(current => current ? { ...current, name: event.target.value } : current)}
+      />
 
-      <label style={styles.field}>
-        <span style={styles.fieldLabel}>Level</span>
-        <input
-          style={styles.input}
-          type="number"
-          min={1}
-          max={15}
-          value={build.level}
-          onChange={event => {
-            const nextLevel = Math.max(1, Number(event.target.value) || 1)
-            onChange(current => current ? { ...current, level: nextLevel } : current)
-          }}
-        />
-      </label>
-
-      <label style={styles.field}>
-        <span style={styles.fieldLabel}>Alignment</span>
-        <input
-          style={styles.input}
-          placeholder="Optional"
-          value={build.alignment ?? ''}
-          onChange={event => onChange(current => current ? {
-            ...current,
-            alignment: normalizeSelectValue(event.target.value),
-          } : current)}
-        />
-      </label>
-    </div>
+      <div className="panel-title" style={{ ...styles.v1PanelTitle, marginTop: '10px' }}>// ALIGNMENT</div>
+      <div style={styles.alignmentGrid}>
+        {ALIGNMENTS.map(alignment => (
+          <button
+            key={alignment.id}
+            type="button"
+            style={{
+              ...styles.alignmentCard,
+              ...(build.alignment === alignment.id ? styles.alignmentCardSelected : {}),
+            }}
+            onClick={() => onChange(current => current ? { ...current, alignment: alignment.id } : current)}
+          >
+            <div style={styles.alignmentName}>{alignment.name.toUpperCase()}</div>
+            <div style={styles.alignmentDesc}>{alignment.desc}</div>
+          </button>
+        ))}
+      </div>
+    </>
   )
 }
 
-function PathStep({
+function RaceStep({
+  build,
+  onChange,
+}: {
+  build: CharacterBuild
+  onChange: React.Dispatch<React.SetStateAction<CharacterBuild | null>>
+}) {
+  const [search, setSearch] = useState('')
+  const filteredRaces = races.filter(race => {
+    const text = `${race.name} ${race.summary ?? ''} ${(race.tags || []).join(' ')}`.toLowerCase()
+    return text.includes(search.toLowerCase())
+  })
+  const selectedRace = build.raceId
+    ? (races.find(race => race.id === build.raceId) ?? filteredRaces[0] ?? null)
+    : (filteredRaces[0] ?? null)
+
+  return (
+    <>
+      <div className="panel-title" style={styles.v1PanelTitle}>// RACE / SPECIES SELECTION</div>
+      <div style={styles.v1PickerLayout}>
+        <div style={styles.v1Sidebar}>
+          <input
+            style={styles.input}
+            placeholder="Search races..."
+            value={search}
+            onChange={event => setSearch(event.target.value)}
+          />
+          <div style={styles.v1List}>
+            {filteredRaces.map(race => (
+              <button
+                key={race.id}
+                type="button"
+                onClick={() => onChange(current => current ? {
+                  ...current,
+                  raceId: race.id,
+                  occId: null,
+                  rccId: null,
+                } : current)}
+                style={{
+                  ...styles.v1ListItem,
+                  ...(build.raceId === race.id ? styles.v1ListItemSelected : {}),
+                }}
+              >
+                <div style={styles.v1ListItemTitle}>{race.name.toUpperCase()}</div>
+                <div style={styles.v1ListItemMeta}>{(race.tags || []).slice(0, 2).join(' · ') || race.source.book}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={styles.v1DetailPane}>
+          {selectedRace
+            ? <RaceDetailCard race={selectedRace} />
+            : <div style={styles.emptyState}>Select a race to preview.</div>}
+        </div>
+      </div>
+    </>
+  )
+}
+
+function OccStep({
   build,
   resolved,
   onChange,
@@ -477,63 +464,76 @@ function PathStep({
   resolved: ResolvedCharacter
   onChange: React.Dispatch<React.SetStateAction<CharacterBuild | null>>
 }) {
-  const race = build.raceId ? registry.byId.get(build.raceId) as CompendiumRace | undefined : undefined
-  const rcc = build.rccId ? registry.byId.get(build.rccId) as CompendiumRcc | undefined : undefined
-  const occ = build.occId ? registry.byId.get(build.occId) as CompendiumOcc | undefined : undefined
+  const [search, setSearch] = useState('')
+  const selectedRace = build.raceId ? (registry.byId.get(build.raceId) as CompendiumRace | undefined) : undefined
+  const raceCompatibility = selectedRace?.compatibility
+  const requiredRcc = raceCompatibility?.mode === 'rcc_required' && raceCompatibility.requiredRccId
+    ? rccs.find(rcc => rcc.id === raceCompatibility.requiredRccId) ?? null
+    : null
+  const compatibleOccs = getCompatibleOccs(selectedRace ?? null)
+  const filteredOccs = compatibleOccs.filter(occ => {
+    const text = `${occ.name} ${occ.summary ?? ''} ${(occ.tags || []).join(' ')}`.toLowerCase()
+    return text.includes(search.toLowerCase())
+  })
+  const selectedOcc = build.occId
+    ? (compatibleOccs.find(occ => occ.id === build.occId) ?? filteredOccs[0] ?? null)
+    : (filteredOccs[0] ?? null)
+
+  if (requiredRcc) {
+    return (
+      <>
+        <div className="panel-title" style={styles.v1PanelTitle}>// OCCUPATIONAL CHARACTER CLASS</div>
+        <div style={styles.infoBox}>
+          <strong style={{ color: 'var(--accent)' }}>{selectedRace?.name}</strong> is handled as an RCC path.
+          Standard O.C.C. selection does not apply here.
+        </div>
+        <div style={{ ...styles.alignmentCard, ...styles.alignmentCardSelected, cursor: 'default' }}>
+          <div style={styles.alignmentName}>{requiredRcc.name.toUpperCase()}</div>
+          <div style={styles.alignmentDesc}>{requiredRcc.summary ?? 'Auto-assigned racial character class.'}</div>
+        </div>
+        <ValidationStrip issues={resolved.validation.filter(issue => issue.scope === 'build').slice(0, 4)} />
+      </>
+    )
+  }
 
   return (
     <>
-      <div style={styles.formGrid}>
-        <label style={styles.field}>
-          <span style={styles.fieldLabel}>Race</span>
-          <select
-            style={styles.select}
-            value={build.raceId ?? ''}
-            onChange={event => onChange(current => current ? {
-              ...current,
-              raceId: normalizeSelectValue(event.target.value),
-            } : current)}
-          >
-            <option value="">Choose race</option>
-            {races.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
-          </select>
-        </label>
+      <div className="panel-title" style={styles.v1PanelTitle}>// OCCUPATIONAL CHARACTER CLASS</div>
+      <div style={styles.v1PickerLayout}>
+        <div style={styles.v1Sidebar}>
+          <input
+            style={styles.input}
+            placeholder="Search O.C.C.s..."
+            value={search}
+            onChange={event => setSearch(event.target.value)}
+          />
+          <div style={styles.v1List}>
+            {filteredOccs.map(occ => (
+              <button
+                key={occ.id}
+                type="button"
+                onClick={() => onChange(current => current ? {
+                  ...current,
+                  occId: occ.id,
+                  rccId: null,
+                } : current)}
+                style={{
+                  ...styles.v1ListItem,
+                  ...(build.occId === occ.id ? styles.v1ListItemSelected : {}),
+                }}
+              >
+                <div style={styles.v1ListItemTitle}>{occ.name.toUpperCase()}</div>
+                <div style={styles.v1ListItemMeta}>{(occ.tags || []).slice(0, 3).join(' · ') || occ.source.book}</div>
+              </button>
+            ))}
+          </div>
+        </div>
 
-        <label style={styles.field}>
-          <span style={styles.fieldLabel}>RCC</span>
-          <select
-            style={styles.select}
-            value={build.rccId ?? ''}
-            onChange={event => onChange(current => current ? {
-              ...current,
-              rccId: normalizeSelectValue(event.target.value),
-            } : current)}
-          >
-            <option value="">None</option>
-            {rccs.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
-          </select>
-        </label>
-
-        <label style={styles.field}>
-          <span style={styles.fieldLabel}>OCC</span>
-          <select
-            style={styles.select}
-            value={build.occId ?? ''}
-            onChange={event => onChange(current => current ? {
-              ...current,
-              occId: normalizeSelectValue(event.target.value),
-            } : current)}
-          >
-            <option value="">None</option>
-            {occs.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
-          </select>
-        </label>
-      </div>
-
-      <div style={styles.cardGrid}>
-        <EntityCard title="Race" entity={race ?? null} />
-        <EntityCard title="RCC" entity={rcc ?? null} />
-        <EntityCard title="OCC" entity={occ ?? null} />
+        <div style={styles.v1DetailPane}>
+          {selectedOcc
+            ? <OccDetailCard occ={selectedOcc} selected={build.occId === selectedOcc.id} />
+            : <div style={styles.emptyState}>Select an O.C.C. to preview.</div>}
+        </div>
       </div>
 
       <ValidationStrip issues={resolved.validation.filter(issue => issue.scope === 'build').slice(0, 4)} />
@@ -819,40 +819,33 @@ function BuildSummary({
   build: CharacterBuild
   resolved: ResolvedCharacter
 }) {
+  const alignment = ALIGNMENTS.find(entry => entry.id === build.alignment) ?? null
+  const race = build.raceId ? (registry.byId.get(build.raceId) as CompendiumRace | undefined) : undefined
+  const occ = build.occId ? (registry.byId.get(build.occId) as CompendiumOcc | undefined) : undefined
   const errorCount = resolved.validation.filter(issue => issue.severity === 'error').length
   const warningCount = resolved.validation.filter(issue => issue.severity === 'warning').length
 
   return (
     <>
-      <h2 style={styles.panelTitle}>Current Character</h2>
+      <div style={styles.summaryTitle}>// CURRENT BUILD</div>
       <div style={styles.definitionList}>
-        <Definition label="Name">{build.name}</Definition>
-        <Definition label="Race">{build.raceId ?? 'None'}</Definition>
-        <Definition label="RCC">{build.rccId ?? 'None'}</Definition>
-        <Definition label="OCC">{build.occId ?? 'None'}</Definition>
-        <Definition label="Level">{String(build.level)}</Definition>
+        <Definition label="NAME">{build.name || '—'}</Definition>
+        <Definition label="ALIGN">{alignment?.name || '—'}</Definition>
+        <Definition label="RACE">{race?.name || '—'}</Definition>
+        <Definition label="O.C.C.">{occ?.name || build.rccId || '—'}</Definition>
+        <Definition label="IQ">{String(build.attributes.IQ)}</Definition>
+        <Definition label="PS">{String(build.attributes.PS)}</Definition>
+        <Definition label="PP">{String(build.attributes.PP)}</Definition>
+        <Definition label="PE">{String(build.attributes.PE)}</Definition>
+        <Definition label="SKILLS">{`${build.skillSelections.length} selected`}</Definition>
       </div>
 
-      <h3 style={styles.subTitle}>Current Totals</h3>
-      <div style={styles.selectionSummary}>
-        <SummaryChip label="Skills" value={resolved.skills.length} />
-        <SummaryChip label="Powers" value={resolved.powers.length} />
-        <SummaryChip label="Spells" value={resolved.spells.length} />
-        <SummaryChip label="Attacks" value={resolved.attacks.length} />
-        <SummaryChip label="Gear" value={resolved.equipment.length} />
-      </div>
-
-      <h3 style={styles.subTitle}>Issues</h3>
+      <h3 style={styles.subTitle}>Status</h3>
       <div style={styles.selectionSummary}>
         <SummaryChip label="Errors" value={errorCount} />
         <SummaryChip label="Warnings" value={warningCount} />
-      </div>
-
-      <h3 style={styles.subTitle}>Open Choices</h3>
-      <div style={styles.choiceList}>
-        {resolved.availableChoices.length
-          ? resolved.availableChoices.map(choice => <ChoiceCard key={choice.id} choice={choice} />)
-          : <p style={styles.emptyState}>No open choice slots right now.</p>}
+        <SummaryChip label="Powers" value={resolved.powers.length} />
+        <SummaryChip label="Spells" value={resolved.spells.length} />
       </div>
     </>
   )
@@ -944,20 +937,66 @@ function DebugSurface({
   )
 }
 
-function EntityCard({ title, entity }: { title: string; entity: CompendiumEntity | null }) {
+function RaceDetailCard({ race }: { race: CompendiumRace }) {
+  const poolSummary = (race.resourcePools || []).map(pool => `${pool.label}: ${pool.formula ?? pool.fixedValue ?? '—'}`)
+  const notePreview = (race.notes || []).slice(0, 6)
   return (
-    <article style={styles.subCard}>
-      <h3 style={styles.subCardTitle}>{title}</h3>
-      {entity
-        ? (
-          <>
-            <p style={styles.entityName}>{entity.name}</p>
-            <p style={styles.entitySummary}>{entity.summary ?? 'No summary yet.'}</p>
-            {entity.tags?.length ? <p style={styles.entityMeta}>Tags: {entity.tags.join(', ')}</p> : null}
-          </>
-          )
-        : <p style={styles.emptyState}>Nothing selected.</p>}
-    </article>
+    <div>
+      <div style={styles.entityName}>{race.name.toUpperCase()}</div>
+      <div style={styles.entityMeta}>{(race.tags || []).join(' · ')}</div>
+      <p style={styles.entitySummary}>{race.summary ?? 'No summary yet.'}</p>
+      {poolSummary.length > 0 && (
+        <>
+          <div style={styles.detailLabel}>RESOURCE POOLS</div>
+          <div style={styles.pillWrap}>
+            {poolSummary.map(entry => <span key={entry} style={styles.detailPill}>{entry}</span>)}
+          </div>
+        </>
+      )}
+      {notePreview.length > 0 && (
+        <>
+          <div style={styles.detailLabel}>NOTES</div>
+          <ul style={styles.noteList}>
+            {notePreview.map(note => <li key={note}>{note}</li>)}
+          </ul>
+        </>
+      )}
+    </div>
+  )
+}
+
+function OccDetailCard({ occ, selected }: { occ: CompendiumOcc; selected: boolean }) {
+  const requirementNotes = occ.requirements?.notes || []
+  const grantedSkillCount = occ.grants.filter(grant => grant.kind === 'grant_skill').length
+  const choiceCount = occ.grants.filter(grant => grant.kind === 'grant_skill_choice').length
+  return (
+    <div>
+      <div style={styles.entityName}>{occ.name.toUpperCase()}</div>
+      <div style={styles.entityMeta}>{(occ.tags || []).join(' · ')}</div>
+      <p style={styles.entitySummary}>{occ.summary ?? 'No summary yet.'}</p>
+      <div style={styles.pillWrap}>
+        <span style={styles.detailPill}>{grantedSkillCount} granted skills</span>
+        <span style={styles.detailPill}>{choiceCount} skill choice groups</span>
+        {occ.requirements?.attributes
+          ? Object.entries(occ.requirements.attributes).map(([attribute, value]) => (
+            <span key={attribute} style={styles.detailPill}>{attribute} {value}+</span>
+          ))
+          : null}
+      </div>
+      {requirementNotes.length > 0 && (
+        <>
+          <div style={styles.detailLabel}>REQUIREMENTS / NOTES</div>
+          <ul style={styles.noteList}>
+            {requirementNotes.slice(0, 5).map(note => <li key={note}>{note}</li>)}
+          </ul>
+        </>
+      )}
+      <div style={{ marginTop: '14px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <span style={selected ? styles.selectionStateActive : styles.selectionStateIdle}>
+          {selected ? 'SELECTED' : 'PREVIEW'}
+        </span>
+      </div>
+    </div>
   )
 }
 
@@ -1428,6 +1467,17 @@ function getEntitiesForChoiceSlot(choice: ChoiceSlot, expectedKind: CompendiumEn
   return sortByName(entities.filter(entity => matchesSlotFilter(entity, choice)))
 }
 
+function getCompatibleOccs(race: CompendiumRace | null) {
+  if (!race?.compatibility) return occs
+  if (race.compatibility.mode === 'restricted_occ' && race.compatibility.allowedOccIds?.length) {
+    return occs.filter(occ => race.compatibility?.allowedOccIds?.includes(occ.id))
+  }
+  if (race.compatibility.mode === 'rcc_required' || race.compatibility.mode === 'none') {
+    return []
+  }
+  return occs
+}
+
 function setSkillSelectionForSlot(build: CharacterBuild, slotId: string, slotIndex: number, nextSkillId: string) {
   const skillSelections = [...build.skillSelections]
   const slotMatches = skillSelections
@@ -1611,12 +1661,6 @@ function formatAttributes(build: CharacterBuild) {
   return Object.entries(build.attributes).map(([key, value]) => `${key} ${value}`).join(' · ')
 }
 
-function formatTimestamp(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString()
-}
-
 const styles: Record<string, React.CSSProperties> = {
   page: {
     minHeight: '100vh',
@@ -1693,6 +1737,15 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 10,
     justifyContent: 'flex-end',
   },
+  headerSelect: {
+    minWidth: 220,
+    borderRadius: 14,
+    border: '1px solid rgba(21,33,38,0.18)',
+    padding: '10px 12px',
+    background: '#f8faf9',
+    color: '#152126',
+    font: 'inherit',
+  },
   metricBlock: {
     padding: '16px 18px',
     borderRadius: 18,
@@ -1762,6 +1815,19 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 13,
     opacity: 0.8,
     lineHeight: 1.35,
+  },
+  stepHint: {
+    maxWidth: 1440,
+    margin: '0 auto 16px',
+    fontFamily: '"Share Tech Mono", monospace',
+    fontSize: '0.72em',
+    color: '#536366',
+  },
+  v1PanelTitle: {
+    marginBottom: '12px',
+    fontFamily: '"Share Tech Mono", monospace',
+    letterSpacing: '0.08em',
+    color: '#7e4d20',
   },
   builderGrid: {
     maxWidth: 1440,
@@ -1925,6 +1991,17 @@ const styles: Record<string, React.CSSProperties> = {
     letterSpacing: '0.1em',
     color: '#7d633f',
   },
+  nameInput: {
+    width: '100%',
+    borderRadius: 14,
+    border: '1px solid rgba(21,33,38,0.16)',
+    padding: '14px 16px',
+    background: '#f9fbfa',
+    color: '#152126',
+    font: 'inherit',
+    fontSize: 18,
+    boxSizing: 'border-box',
+  },
   input: {
     width: '100%',
     borderRadius: 12,
@@ -1951,19 +2028,146 @@ const styles: Record<string, React.CSSProperties> = {
     gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
     marginTop: 16,
   },
+  alignmentGrid: {
+    display: 'grid',
+    gap: 12,
+    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+  },
+  alignmentCard: {
+    border: '1px solid rgba(21,33,38,0.14)',
+    borderRadius: 16,
+    padding: '14px 16px',
+    background: '#f8faf9',
+    textAlign: 'left',
+    cursor: 'pointer',
+  },
+  alignmentCardSelected: {
+    borderColor: '#8a5420',
+    background: 'rgba(240,181,106,0.14)',
+  },
+  alignmentName: {
+    fontFamily: '"Orbitron", sans-serif',
+    fontSize: '0.84em',
+    fontWeight: 700,
+    letterSpacing: '0.05em',
+    marginBottom: '6px',
+  },
+  alignmentDesc: {
+    margin: 0,
+    lineHeight: 1.5,
+    color: '#425459',
+    fontSize: 14,
+  },
+  infoBox: {
+    margin: '0 0 14px',
+    padding: '12px 14px',
+    borderRadius: 14,
+    background: 'rgba(240,181,106,0.12)',
+    border: '1px solid rgba(138,84,32,0.18)',
+    lineHeight: 1.55,
+  },
+  v1PickerLayout: {
+    display: 'flex',
+    gap: 16,
+    alignItems: 'flex-start',
+  },
+  v1Sidebar: {
+    width: 240,
+    flexShrink: 0,
+    display: 'grid',
+    gap: 8,
+  },
+  v1List: {
+    border: '1px solid rgba(21,33,38,0.12)',
+    borderRadius: 8,
+    overflow: 'hidden',
+    background: '#f8faf9',
+  },
+  v1ListItem: {
+    width: '100%',
+    border: 0,
+    padding: '10px 12px',
+    textAlign: 'left',
+    background: 'transparent',
+    cursor: 'pointer',
+    borderBottom: '1px solid rgba(21,33,38,0.08)',
+  },
+  v1ListItemSelected: {
+    background: 'rgba(0,200,255,0.12)',
+    boxShadow: 'inset 3px 0 0 #1496a8',
+  },
+  v1ListItemTitle: {
+    fontFamily: '"Orbitron", sans-serif',
+    fontSize: '0.72em',
+    fontWeight: 700,
+    marginBottom: '4px',
+  },
+  v1ListItemMeta: {
+    fontFamily: '"Share Tech Mono", monospace',
+    fontSize: '0.66em',
+    color: '#5a6a6d',
+  },
+  v1DetailPane: {
+    flex: 1,
+    minHeight: 420,
+    borderLeft: '1px solid rgba(21,33,38,0.12)',
+    paddingLeft: 16,
+  },
   entityName: {
     margin: '0 0 6px',
     fontWeight: 700,
+    fontFamily: '"Orbitron", sans-serif',
+    color: '#8a5420',
   },
   entitySummary: {
-    margin: 0,
+    margin: '10px 0 0',
     lineHeight: 1.55,
     color: '#425459',
   },
   entityMeta: {
-    margin: '10px 0 0',
+    margin: '4px 0 0',
     color: '#536366',
     fontSize: 13,
+    textTransform: 'uppercase',
+    letterSpacing: '0.08em',
+  },
+  detailLabel: {
+    marginTop: 14,
+    marginBottom: 6,
+    fontFamily: '"Share Tech Mono", monospace',
+    fontSize: 12,
+    letterSpacing: '0.1em',
+    color: '#7d633f',
+  },
+  pillWrap: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  detailPill: {
+    padding: '4px 8px',
+    borderRadius: 999,
+    border: '1px solid rgba(21,33,38,0.16)',
+    fontSize: 12,
+    background: '#f8faf9',
+  },
+  selectionStateActive: {
+    borderRadius: 999,
+    padding: '4px 10px',
+    background: '#152126',
+    color: '#f7f2e7',
+    fontSize: 12,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+  },
+  selectionStateIdle: {
+    borderRadius: 999,
+    padding: '4px 10px',
+    background: '#edf2ef',
+    color: '#425459',
+    fontSize: 12,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
   },
   definitionList: {
     display: 'grid',
@@ -1980,6 +2184,12 @@ const styles: Record<string, React.CSSProperties> = {
     textTransform: 'uppercase',
     letterSpacing: '0.1em',
     color: '#7d633f',
+  },
+  summaryTitle: {
+    marginBottom: 12,
+    fontFamily: '"Share Tech Mono", monospace',
+    letterSpacing: '0.08em',
+    color: '#7e4d20',
   },
   definitionValue: {
     lineHeight: 1.45,
