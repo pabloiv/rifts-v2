@@ -11,7 +11,7 @@ Status:
   - `M2 Powers and Magic`: complete for normalized import plus resolver output
   - `M3 Combat Surface`: complete
   - `M4 Fixture Viewer App`: complete
-  - `M5 Editable Alpha`: next
+  - `M5 Editable Alpha`: complete
 
 Related documents:
 - [rifts-v2-project-bible-2026-03-09.md](/home/pablo/rifts-v2/docs/rifts-v2-project-bible-2026-03-09.md)
@@ -136,6 +136,14 @@ Scope:
 Exit criteria:
 - a mundane character can be created and adjusted entirely inside V2
 
+Status:
+- Complete for first alpha
+- the browser app now supports:
+  - loading parity fixtures into a working build document
+  - starting a blank build
+  - editing name, race, RCC, OCC, level, skill choices, and equipment
+  - live re-resolution in the browser against the committed compendium snapshot
+
 ## Representative Alpha Fixtures
 
 These are the target fixtures for alpha confidence:
@@ -163,8 +171,8 @@ Not required before first testing:
 
 ## Current Immediate Sequence
 
-1. Build `M5` limited editor on top of the fixture viewer and current resolver output.
-2. Keep parity fixtures current as the editable build document grows.
+1. Deepen alpha parity around powers, spells, and more restrictive choice-slot UX.
+2. Start the next browser layer after alpha: stronger build flows, persistence, and play-state separation.
 
 ## Success Standard
 

@@ -1,9 +1,21 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import snapshotData from './demoSnapshot.generated.json'
 import { createCompendiumRegistry } from '@rifts-v2/compendium'
 import { resolveCharacterBuild } from '@rifts-v2/rules-engine'
-import type { CharacterBuild, ChoiceSlot, CompendiumEntity, ResolvedCharacter } from '@rifts-v2/schema'
+import type {
+  CharacterBuild,
+  ChoiceSlot,
+  CompendiumEntity,
+  CompendiumEquipment,
+  CompendiumOcc,
+  CompendiumRace,
+  CompendiumRcc,
+  CompendiumSkill,
+  EquipmentSelection,
+  ResolvedCharacter,
+  SkillSelection,
+} from '@rifts-v2/schema'
 
 type DemoSnapshot = {
   generatedAt: string
@@ -15,21 +27,32 @@ type DemoSnapshot = {
 const demoSnapshot = snapshotData as DemoSnapshot
 const registry = createCompendiumRegistry(demoSnapshot.entities)
 const fixtureMap = new Map(demoSnapshot.fixtures.map(fixture => [fixture.id, fixture]))
+const races = sortByName((registry.byKind.get('race') ?? []) as CompendiumRace[])
+const rccs = sortByName((registry.byKind.get('rcc') ?? []) as CompendiumRcc[])
+const occs = sortByName((registry.byKind.get('occ') ?? []) as CompendiumOcc[])
+const equipmentCatalog = sortByName((registry.byKind.get('equipment') ?? []) as CompendiumEquipment[])
 const entityStats = {
-  races: registry.byKind.get('race')?.length ?? 0,
-  rccs: registry.byKind.get('rcc')?.length ?? 0,
-  occs: registry.byKind.get('occ')?.length ?? 0,
+  races: races.length,
+  rccs: rccs.length,
+  occs: occs.length,
   skills: registry.byKind.get('skill')?.length ?? 0,
   powers: registry.byKind.get('power')?.length ?? 0,
   spells: registry.byKind.get('spell')?.length ?? 0,
   attacks: registry.byKind.get('attack')?.length ?? 0,
-  equipment: registry.byKind.get('equipment')?.length ?? 0,
+  equipment: equipmentCatalog.length,
   vehicles: registry.byKind.get('vehicle')?.length ?? 0,
 }
 
 function App() {
-  const [activeFixtureId, setActiveFixtureId] = useState(demoSnapshot.fixtures[0]?.id ?? '')
-  const build = fixtureMap.get(activeFixtureId) ?? demoSnapshot.fixtures[0]
+  const defaultFixture = demoSnapshot.fixtures[0] ?? null
+  const [activeFixtureId, setActiveFixtureId] = useState(defaultFixture?.id ?? '')
+  const [build, setBuild] = useState<CharacterBuild | null>(defaultFixture ? cloneBuild(defaultFixture) : null)
+
+  useEffect(() => {
+    const fixture = fixtureMap.get(activeFixtureId) ?? defaultFixture
+    setBuild(fixture ? cloneBuild(fixture) : null)
+  }, [activeFixtureId, defaultFixture])
+
   const resolved = build ? resolveCharacterBuild({ registry, build }) : null
 
   return (
@@ -37,10 +60,10 @@ function App() {
       <section style={styles.hero}>
         <div>
           <p style={styles.eyebrow}>Rifts V2 Alpha</p>
-          <h1 style={styles.title}>Fixture Viewer</h1>
+          <h1 style={styles.title}>Fixture Viewer and Limited Editor</h1>
           <p style={styles.copy}>
-            This is the first browser-testable V2 surface. It resolves committed fixtures against the
-            normalized compendium snapshot and shows the output the next builder and sheet will consume.
+            This is the first browser-testable V2 surface. It loads a committed normalized snapshot,
+            lets you start from a known fixture, and edits a live build document against the new resolver.
           </p>
         </div>
         <div style={styles.heroMeta}>
@@ -57,7 +80,22 @@ function App() {
 
       <section style={styles.topGrid}>
         <article style={styles.panel}>
-          <h2 style={styles.panelTitle}>Fixture Set</h2>
+          <div style={styles.panelHeader}>
+            <div>
+              <h2 style={styles.panelTitle}>Fixture Set</h2>
+              <p style={styles.panelCopy}>Load a known parity case or start a fresh working build.</p>
+            </div>
+            <button
+              type="button"
+              style={styles.primaryButton}
+              onClick={() => {
+                setActiveFixtureId('')
+                setBuild(createBlankBuild())
+              }}
+            >
+              New Blank Build
+            </button>
+          </div>
           <div style={styles.fixtureList}>
             {demoSnapshot.fixtures.map(fixture => {
               const selected = fixture.id === activeFixtureId
@@ -95,9 +133,346 @@ function App() {
       </section>
 
       {build && resolved
-        ? <ResolvedView build={build} resolved={resolved} />
+        ? (
+          <>
+            <BuildEditor
+              build={build}
+              resolved={resolved}
+              onChange={setBuild}
+              onReset={() => {
+                const fixture = fixtureMap.get(activeFixtureId) ?? defaultFixture
+                setBuild(fixture ? cloneBuild(fixture) : null)
+              }}
+            />
+            <ResolvedView build={build} resolved={resolved} />
+          </>
+          )
         : <section style={styles.panel}><p style={styles.copy}>No fixture loaded.</p></section>}
     </main>
+  )
+}
+
+function BuildEditor({
+  build,
+  resolved,
+  onChange,
+  onReset,
+}: {
+  build: CharacterBuild
+  resolved: ResolvedCharacter
+  onChange: React.Dispatch<React.SetStateAction<CharacterBuild | null>>
+  onReset: () => void
+}) {
+  const skillChoices = resolved.availableChoices.filter(choice => choice.choiceFamily === 'skill')
+
+  return (
+    <section style={styles.editorGrid}>
+      <article style={styles.panel}>
+        <div style={styles.panelHeader}>
+          <div>
+            <h2 style={styles.panelTitle}>Editable Build</h2>
+            <p style={styles.panelCopy}>
+              Narrow alpha editor over the V2 build document. Powers and spells still come from the loaded fixture.
+            </p>
+          </div>
+          <button type="button" style={styles.secondaryButton} onClick={onReset}>
+            Reset to Fixture
+          </button>
+        </div>
+
+        <div style={styles.formGrid}>
+          <label style={styles.field}>
+            <span style={styles.fieldLabel}>Name</span>
+            <input
+              style={styles.input}
+              value={build.name}
+              onChange={event => onChange(current => current ? { ...current, name: event.target.value } : current)}
+            />
+          </label>
+
+          <label style={styles.field}>
+            <span style={styles.fieldLabel}>Level</span>
+            <input
+              style={styles.input}
+              type="number"
+              min={1}
+              max={15}
+              value={build.level}
+              onChange={event => {
+                const nextLevel = Math.max(1, Number(event.target.value) || 1)
+                onChange(current => current ? { ...current, level: nextLevel } : current)
+              }}
+            />
+          </label>
+
+          <label style={styles.field}>
+            <span style={styles.fieldLabel}>Race</span>
+            <select
+              style={styles.select}
+              value={build.raceId ?? ''}
+              onChange={event => onChange(current => current ? {
+                ...current,
+                raceId: normalizeSelectValue(event.target.value),
+              } : current)}
+            >
+              <option value="">No race</option>
+              {races.map(race => <option key={race.id} value={race.id}>{race.name}</option>)}
+            </select>
+          </label>
+
+          <label style={styles.field}>
+            <span style={styles.fieldLabel}>RCC</span>
+            <select
+              style={styles.select}
+              value={build.rccId ?? ''}
+              onChange={event => onChange(current => current ? {
+                ...current,
+                rccId: normalizeSelectValue(event.target.value),
+              } : current)}
+            >
+              <option value="">None</option>
+              {rccs.map(rcc => <option key={rcc.id} value={rcc.id}>{rcc.name}</option>)}
+            </select>
+          </label>
+
+          <label style={styles.field}>
+            <span style={styles.fieldLabel}>OCC</span>
+            <select
+              style={styles.select}
+              value={build.occId ?? ''}
+              onChange={event => onChange(current => current ? {
+                ...current,
+                occId: normalizeSelectValue(event.target.value),
+              } : current)}
+            >
+              <option value="">None</option>
+              {occs.map(occ => <option key={occ.id} value={occ.id}>{occ.name}</option>)}
+            </select>
+          </label>
+        </div>
+
+        <h3 style={styles.subTitle}>Attributes</h3>
+        <p style={styles.panelCopy}>{formatAttributes(build)}</p>
+
+        <h3 style={styles.subTitle}>Selections</h3>
+        <div style={styles.selectionSummary}>
+          <SummaryChip label="Skills" value={build.skillSelections.length} />
+          <SummaryChip label="Equipment" value={build.equipmentSelections.length} />
+          <SummaryChip label="Powers" value={build.powerSelections.length} />
+          <SummaryChip label="Spells" value={build.spellSelections.length} />
+        </div>
+      </article>
+
+      <article style={styles.panel}>
+        <h2 style={styles.panelTitle}>Skill Choices</h2>
+        {skillChoices.length
+          ? skillChoices.map(choice => (
+            <SkillChoiceEditor
+              key={choice.id}
+              build={build}
+              choice={choice}
+              onChange={onChange}
+            />
+          ))
+          : <p style={styles.emptyState}>No active skill choice slots for this build.</p>}
+      </article>
+
+      <article style={styles.panelWide}>
+        <div style={styles.panelHeader}>
+          <div>
+            <h2 style={styles.panelTitle}>Equipment Loadout</h2>
+            <p style={styles.panelCopy}>Freeform alpha loadout editor over normalized equipment entities.</p>
+          </div>
+          <button
+            type="button"
+            style={styles.primaryButton}
+            onClick={() => onChange(current => current ? {
+              ...current,
+              equipmentSelections: [
+                ...current.equipmentSelections,
+                {
+                  selectionId: createSelectionId('equipment'),
+                  equipmentId: equipmentCatalog[0]?.id ?? '',
+                  quantity: 1,
+                  equippedSlotId: null,
+                },
+              ],
+            } : current)}
+          >
+            Add Equipment
+          </button>
+        </div>
+
+        <div style={styles.equipmentList}>
+          {build.equipmentSelections.length
+            ? build.equipmentSelections.map(selection => (
+              <EquipmentEditorRow
+                key={selection.selectionId}
+                selection={selection}
+                onChange={onChange}
+              />
+            ))
+            : <p style={styles.emptyState}>No equipment selected.</p>}
+        </div>
+      </article>
+    </section>
+  )
+}
+
+function SkillChoiceEditor({
+  build,
+  choice,
+  onChange,
+}: {
+  build: CharacterBuild
+  choice: ChoiceSlot
+  onChange: React.Dispatch<React.SetStateAction<CharacterBuild | null>>
+}) {
+  const options = getEntitiesForChoiceSlot(choice, 'skill') as CompendiumSkill[]
+  const slotSelections = build.skillSelections.filter(selection => selection.sourceSlotId === choice.id)
+  const rowCount = Math.max(choice.count, slotSelections.length || 1)
+
+  return (
+    <div style={styles.choiceEditorCard}>
+      <div style={styles.choiceHeader}>
+        <strong>{choice.label}</strong>
+        <span style={styles.choiceBadge}>{slotSelections.length}/{choice.count}</span>
+      </div>
+      <p style={styles.choiceMeta}>
+        Source {choice.sourceLabel ?? '—'}
+      </p>
+
+      <div style={styles.choiceRows}>
+        {Array.from({ length: rowCount }, (_, index) => {
+          const selection = slotSelections[index] ?? null
+          const skillEntity = selection ? asSkill(selection.skillId) : null
+          const specializationRule = skillEntity?.specialization ?? null
+          return (
+            <div key={`${choice.id}-${selection?.selectionId ?? index}`} style={styles.choiceRow}>
+              <select
+                style={styles.select}
+                value={selection?.skillId ?? ''}
+                onChange={event => {
+                  const nextSkillId = event.target.value
+                  onChange(current => current ? setSkillSelectionForSlot(current, choice.id, index, nextSkillId) : current)
+                }}
+              >
+                <option value="">Open slot</option>
+                {options.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
+              </select>
+
+              {selection && specializationRule
+                ? <SkillSpecializationField selection={selection} skill={skillEntity!} onChange={onChange} />
+                : null}
+
+              {selection
+                ? (
+                  <button
+                    type="button"
+                    style={styles.inlineButton}
+                    onClick={() => onChange(current => current ? removeSkillSelection(current, selection.selectionId) : current)}
+                  >
+                    Remove
+                  </button>
+                  )
+                : null}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function SkillSpecializationField({
+  selection,
+  skill,
+  onChange,
+}: {
+  selection: SkillSelection
+  skill: CompendiumSkill
+  onChange: React.Dispatch<React.SetStateAction<CharacterBuild | null>>
+}) {
+  const rule = skill.specialization
+  if (!rule) return null
+
+  if (rule.mode === 'option_set' && rule.options?.length) {
+    return (
+      <select
+        style={styles.select}
+        value={selection.specialization ?? ''}
+        onChange={event => onChange(current => current ? updateSkillSelection(current, selection.selectionId, {
+          specialization: normalizeSelectValue(event.target.value),
+        }) : current)}
+      >
+        <option value="">Choose {rule.label}</option>
+        {rule.options.map(option => <option key={option} value={option}>{option}</option>)}
+      </select>
+    )
+  }
+
+  return (
+    <input
+      style={styles.input}
+      placeholder={rule.label}
+      value={selection.specialization ?? ''}
+      onChange={event => onChange(current => current ? updateSkillSelection(current, selection.selectionId, {
+        specialization: normalizeSelectValue(event.target.value),
+      }) : current)}
+    />
+  )
+}
+
+function EquipmentEditorRow({
+  selection,
+  onChange,
+}: {
+  selection: EquipmentSelection
+  onChange: React.Dispatch<React.SetStateAction<CharacterBuild | null>>
+}) {
+  return (
+    <div style={styles.equipmentRow}>
+      <select
+        style={styles.select}
+        value={selection.equipmentId}
+        onChange={event => onChange(current => current ? updateEquipmentSelection(current, selection.selectionId, {
+          equipmentId: event.target.value,
+        }) : current)}
+      >
+        <option value="">Choose equipment</option>
+        {equipmentCatalog.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+      </select>
+
+      <input
+        style={styles.input}
+        type="number"
+        min={1}
+        value={selection.quantity ?? 1}
+        onChange={event => onChange(current => current ? updateEquipmentSelection(current, selection.selectionId, {
+          quantity: Math.max(1, Number(event.target.value) || 1),
+        }) : current)}
+      />
+
+      <input
+        style={styles.input}
+        placeholder="Equipped slot"
+        value={selection.equippedSlotId ?? ''}
+        onChange={event => onChange(current => current ? updateEquipmentSelection(current, selection.selectionId, {
+          equippedSlotId: normalizeSelectValue(event.target.value),
+        }) : current)}
+      />
+
+      <button
+        type="button"
+        style={styles.inlineButton}
+        onClick={() => onChange(current => current ? {
+          ...current,
+          equipmentSelections: current.equipmentSelections.filter(item => item.selectionId !== selection.selectionId),
+        } : current)}
+      >
+        Remove
+      </button>
+    </div>
   )
 }
 
@@ -105,9 +480,9 @@ function ResolvedView({ build, resolved }: { build: CharacterBuild; resolved: Re
   return (
     <section style={styles.viewerGrid}>
       <article style={styles.panel}>
-        <h2 style={styles.panelTitle}>Build</h2>
+        <h2 style={styles.panelTitle}>Build Snapshot</h2>
         <div style={styles.definitionList}>
-          <Definition label="Fixture">{build.id}</Definition>
+          <Definition label="Build">{build.id}</Definition>
           <Definition label="Name">{build.name}</Definition>
           <Definition label="Race">{build.raceId ?? 'None'}</Definition>
           <Definition label="RCC">{build.rccId ?? 'None'}</Definition>
@@ -125,11 +500,15 @@ function ResolvedView({ build, resolved }: { build: CharacterBuild; resolved: Re
         </div>
 
         <h3 style={styles.subTitle}>Explanation</h3>
-        <ul style={styles.noteList}>
-          {resolved.explanations.flatMap(explanation => explanation.notes ?? []).map(note => (
-            <li key={note}>{note}</li>
-          ))}
-        </ul>
+        {resolved.explanations.flatMap(explanation => explanation.notes ?? []).length
+          ? (
+            <ul style={styles.noteList}>
+              {resolved.explanations.flatMap(explanation => explanation.notes ?? []).map(note => (
+                <li key={note}>{note}</li>
+              ))}
+            </ul>
+            )
+          : <p style={styles.emptyState}>No explanation notes yet.</p>}
       </article>
 
       <article style={styles.panel}>
@@ -138,10 +517,13 @@ function ResolvedView({ build, resolved }: { build: CharacterBuild; resolved: Re
           ? (
             <div style={styles.validationList}>
               {resolved.validation.map(issue => (
-                <div key={issue.id} style={{
-                  ...styles.validationItem,
-                  ...(issue.severity === 'error' ? styles.validationError : styles.validationWarning),
-                }}>
+                <div
+                  key={issue.id}
+                  style={{
+                    ...styles.validationItem,
+                    ...(issue.severity === 'error' ? styles.validationError : styles.validationWarning),
+                  }}
+                >
                   <strong>{issue.severity.toUpperCase()}</strong>
                   <span>{issue.message}</span>
                   {issue.notes?.length ? <span style={styles.validationNotes}>{issue.notes.join(' ')}</span> : null}
@@ -155,7 +537,7 @@ function ResolvedView({ build, resolved }: { build: CharacterBuild; resolved: Re
         <div style={styles.choiceList}>
           {resolved.availableChoices.length
             ? resolved.availableChoices.map(choice => <ChoiceCard key={choice.id} choice={choice} />)
-            : <p style={styles.emptyState}>No open choices for this fixture.</p>}
+            : <p style={styles.emptyState}>No open choices for this build.</p>}
         </div>
       </article>
 
@@ -318,6 +700,189 @@ function SectionTable({ columns, rows, emptyLabel }: { columns: string[]; rows: 
   )
 }
 
+function normalizeSelectValue(value: string): string | null {
+  return value.trim() ? value : null
+}
+
+function cloneBuild(build: CharacterBuild): CharacterBuild {
+  return {
+    ...build,
+    attributes: { ...build.attributes },
+    skillSelections: build.skillSelections.map(selection => ({ ...selection })),
+    powerSelections: build.powerSelections.map(selection => ({ ...selection })),
+    spellSelections: build.spellSelections.map(selection => ({ ...selection })),
+    packageSelections: build.packageSelections.map(selection => ({ ...selection })),
+    equipmentSelections: build.equipmentSelections.map(selection => ({ ...selection })),
+    levelSelections: build.levelSelections.map(selection => {
+      const cloned = { level: selection.level }
+      return {
+        ...cloned,
+        ...(selection.skillSelections ? { skillSelections: selection.skillSelections.map(item => ({ ...item })) } : {}),
+        ...(selection.powerSelections ? { powerSelections: selection.powerSelections.map(item => ({ ...item })) } : {}),
+        ...(selection.spellSelections ? { spellSelections: selection.spellSelections.map(item => ({ ...item })) } : {}),
+        ...(selection.packageSelections ? { packageSelections: selection.packageSelections.map(item => ({ ...item })) } : {}),
+      }
+    }),
+  }
+}
+
+function createBlankBuild(): CharacterBuild {
+  return {
+    schemaVersion: '0.1.0',
+    id: 'working-build',
+    name: 'Working Build',
+    raceId: 'human',
+    rccId: null,
+    occId: null,
+    level: 1,
+    alignment: null,
+    attributes: {
+      IQ: 10,
+      ME: 10,
+      MA: 10,
+      PS: 10,
+      PP: 10,
+      PE: 10,
+      PB: 10,
+      Spd: 10,
+    },
+    skillSelections: [],
+    powerSelections: [],
+    spellSelections: [],
+    packageSelections: [],
+    equipmentSelections: [],
+    levelSelections: [],
+    notes: 'Blank alpha build.',
+  }
+}
+
+function createSelectionId(prefix: string) {
+  return `${prefix}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+function sortByName<T extends { name: string }>(entities: T[]): T[] {
+  return [...entities].sort((left, right) => left.name.localeCompare(right.name))
+}
+
+function asSkill(id: string): CompendiumSkill | null {
+  const entity = registry.byId.get(id)
+  return entity?.kind === 'skill' ? entity : null
+}
+
+function matchesSlotFilter(entity: CompendiumEntity, slot: ChoiceSlot): boolean {
+  if (!slot.allowedEntityKinds.includes(entity.kind)) return false
+  if (slot.allowedIds?.length && !slot.allowedIds.includes(entity.id) && !slot.allowedIds.includes(entity.name)) {
+    return false
+  }
+  if (!slot.filters?.length) return true
+
+  return slot.filters.every(filter => {
+    const values = filter.values ?? []
+    if (filter.key === 'category' && entity.kind === 'skill') {
+      const match = values.includes(entity.category)
+      return filter.mode === 'exclude' ? !match : match
+    }
+    if (filter.key === 'subcategory' && 'subcategory' in entity) {
+      const subcategory = entity.subcategory ?? null
+      const match = subcategory ? values.includes(subcategory) : false
+      return filter.mode === 'exclude' ? !match : match
+    }
+    if (filter.key === 'tag') {
+      const tags = entity.tags ?? []
+      const match = values.some(value => tags.includes(value))
+      return filter.mode === 'exclude' ? !match : match
+    }
+    return true
+  })
+}
+
+function getEntitiesForChoiceSlot(choice: ChoiceSlot, expectedKind: CompendiumEntity['kind']) {
+  const entities = (registry.byKind.get(expectedKind) ?? []) as CompendiumEntity[]
+  return sortByName(entities.filter(entity => matchesSlotFilter(entity, choice)))
+}
+
+function setSkillSelectionForSlot(build: CharacterBuild, slotId: string, slotIndex: number, nextSkillId: string) {
+  const skillSelections = [...build.skillSelections]
+  const slotMatches = skillSelections
+    .map((selection, index) => ({ selection, index }))
+    .filter(entry => entry.selection.sourceSlotId === slotId)
+  const target = slotMatches[slotIndex]
+
+  if (!nextSkillId) {
+    if (!target) return build
+    skillSelections.splice(target.index, 1)
+    return {
+      ...build,
+      skillSelections,
+    }
+  }
+
+  if (target) {
+    const previousSkill = target.selection
+    const nextSkill = asSkill(nextSkillId)
+    const previousEntity = asSkill(previousSkill.skillId)
+    const keepSpecialization = previousEntity?.id === nextSkill?.id ? previousSkill.specialization ?? null : null
+    skillSelections[target.index] = {
+      ...previousSkill,
+      skillId: nextSkillId,
+      specialization: keepSpecialization,
+    }
+    return {
+      ...build,
+      skillSelections,
+    }
+  }
+
+  return {
+    ...build,
+    skillSelections: [
+      ...skillSelections,
+      {
+        selectionId: createSelectionId('skill'),
+        skillId: nextSkillId,
+        sourceSlotId: slotId,
+      },
+    ],
+  }
+}
+
+function updateSkillSelection(
+  build: CharacterBuild,
+  selectionId: string,
+  patch: Partial<SkillSelection>,
+) {
+  return {
+    ...build,
+    skillSelections: build.skillSelections.map(selection => (
+      selection.selectionId === selectionId
+        ? { ...selection, ...patch }
+        : selection
+    )),
+  }
+}
+
+function removeSkillSelection(build: CharacterBuild, selectionId: string) {
+  return {
+    ...build,
+    skillSelections: build.skillSelections.filter(selection => selection.selectionId !== selectionId),
+  }
+}
+
+function updateEquipmentSelection(
+  build: CharacterBuild,
+  selectionId: string,
+  patch: Partial<EquipmentSelection>,
+) {
+  return {
+    ...build,
+    equipmentSelections: build.equipmentSelections.map(selection => (
+      selection.selectionId === selectionId
+        ? { ...selection, ...patch }
+        : selection
+    )),
+  }
+}
+
 function formatAttributes(build: CharacterBuild) {
   return Object.entries(build.attributes).map(([key, value]) => `${key} ${value}`).join(' · ')
 }
@@ -338,7 +903,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: '"Avenir Next", "Segoe UI", sans-serif',
   },
   hero: {
-    maxWidth: 1320,
+    maxWidth: 1440,
     margin: '0 auto 24px',
     padding: '28px 32px',
     borderRadius: 24,
@@ -392,14 +957,21 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.3,
   },
   topGrid: {
-    maxWidth: 1320,
+    maxWidth: 1440,
     margin: '0 auto 20px',
     display: 'grid',
     gap: 20,
     gridTemplateColumns: '1.05fr 1.45fr',
   },
+  editorGrid: {
+    maxWidth: 1440,
+    margin: '0 auto 20px',
+    display: 'grid',
+    gap: 20,
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+  },
   viewerGrid: {
-    maxWidth: 1320,
+    maxWidth: 1440,
     margin: '0 auto',
     display: 'grid',
     gap: 20,
@@ -420,9 +992,21 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: '0 16px 38px rgba(21, 33, 38, 0.11)',
     gridColumn: '1 / -1',
   },
+  panelHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 16,
+    marginBottom: 14,
+  },
   panelTitle: {
-    margin: '0 0 14px',
+    margin: '0 0 10px',
     fontSize: 21,
+  },
+  panelCopy: {
+    margin: 0,
+    color: '#536366',
+    lineHeight: 1.5,
   },
   subTitle: {
     margin: '18px 0 10px',
@@ -430,6 +1014,33 @@ const styles: Record<string, React.CSSProperties> = {
     letterSpacing: '0.08em',
     textTransform: 'uppercase',
     color: '#7e4d20',
+  },
+  primaryButton: {
+    border: 0,
+    borderRadius: 14,
+    padding: '10px 14px',
+    background: '#152126',
+    color: '#f7f2e7',
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
+  secondaryButton: {
+    border: '1px solid rgba(21,33,38,0.18)',
+    borderRadius: 14,
+    padding: '10px 14px',
+    background: '#f8faf9',
+    color: '#152126',
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
+  inlineButton: {
+    border: '1px solid rgba(21,33,38,0.18)',
+    borderRadius: 12,
+    padding: '10px 12px',
+    background: '#f8faf9',
+    color: '#152126',
+    fontWeight: 600,
+    cursor: 'pointer',
   },
   fixtureList: {
     display: 'grid',
@@ -482,6 +1093,41 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 24,
     fontWeight: 700,
   },
+  formGrid: {
+    display: 'grid',
+    gap: 14,
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+  },
+  field: {
+    display: 'grid',
+    gap: 8,
+  },
+  fieldLabel: {
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: '0.1em',
+    color: '#7d633f',
+  },
+  input: {
+    width: '100%',
+    borderRadius: 12,
+    border: '1px solid rgba(21,33,38,0.14)',
+    padding: '11px 12px',
+    background: '#f9fbfa',
+    color: '#152126',
+    font: 'inherit',
+    boxSizing: 'border-box',
+  },
+  select: {
+    width: '100%',
+    borderRadius: 12,
+    border: '1px solid rgba(21,33,38,0.14)',
+    padding: '11px 12px',
+    background: '#f9fbfa',
+    color: '#152126',
+    font: 'inherit',
+    boxSizing: 'border-box',
+  },
   definitionList: {
     display: 'grid',
     gap: 8,
@@ -520,6 +1166,33 @@ const styles: Record<string, React.CSSProperties> = {
   },
   summaryChipValue: {
     fontWeight: 700,
+  },
+  choiceEditorCard: {
+    padding: '14px 16px',
+    borderRadius: 16,
+    background: '#edf2ef',
+    marginBottom: 12,
+  },
+  choiceRows: {
+    display: 'grid',
+    gap: 10,
+    marginTop: 12,
+  },
+  choiceRow: {
+    display: 'grid',
+    gap: 10,
+    gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1.5fr) auto',
+    alignItems: 'center',
+  },
+  equipmentList: {
+    display: 'grid',
+    gap: 12,
+  },
+  equipmentRow: {
+    display: 'grid',
+    gap: 10,
+    gridTemplateColumns: 'minmax(0, 2fr) 120px minmax(0, 1fr) auto',
+    alignItems: 'center',
   },
   noteList: {
     margin: 0,
