@@ -1,6 +1,7 @@
 import type {
   CharacterBuild,
   ChoiceSlot,
+  CompendiumEquipment,
   CompendiumEntity,
   CompendiumOcc,
   CompendiumRace,
@@ -8,6 +9,7 @@ import type {
   Grant,
   ResolvedAttack,
   ResolvedCharacter,
+  ResolvedEquipment,
   ResolvedPool,
   ResolvedPower,
   ResolvedSkill,
@@ -31,6 +33,10 @@ function asRcc(entity: CompendiumEntity | null): CompendiumRcc | null {
 
 function asOcc(entity: CompendiumEntity | null): CompendiumOcc | null {
   return entity?.kind === 'occ' ? entity : null
+}
+
+function asEquipment(entity: CompendiumEntity | null): CompendiumEquipment | null {
+  return entity?.kind === 'equipment' ? entity : null
 }
 
 function collectPools(sourceLabel: string, pools?: ResourcePoolDefinition[]): ResolvedPool[] {
@@ -104,6 +110,61 @@ function collectSelectedSkills(registry: CompendiumRegistry, build: CharacterBui
   })
 }
 
+function collectDirectEquipment(
+  registry: CompendiumRegistry,
+  sourceLabel: string,
+  grants: Grant[],
+): ResolvedEquipment[] {
+  return grants.flatMap(grant => {
+    if (grant.kind !== 'grant_equipment') return []
+    const entity = asEquipment(findEntityByIdOrName(registry, grant.equipmentId))
+    if (!entity) {
+      return [{
+        equipmentId: grant.equipmentId,
+        name: grant.equipmentId,
+        equipmentFamily: 'other',
+        quantity: grant.quantity ?? 1,
+        sourceLabels: [sourceLabel],
+        ...(grant.notes ? { notes: grant.notes } : {}),
+      }]
+    }
+    const item: ResolvedEquipment = {
+      equipmentId: entity.id,
+      name: entity.name,
+      equipmentFamily: entity.equipmentFamily,
+      quantity: grant.quantity ?? 1,
+      sourceLabels: [sourceLabel],
+    }
+    if (entity.subcategory) item.subcategory = entity.subcategory
+    if (entity.eligibleSlots?.length) item.eligibleSlots = entity.eligibleSlots
+    if (entity.wpCategory) item.wpCategory = entity.wpCategory
+    if (entity.notes?.length) item.notes = entity.notes
+    return [item]
+  })
+}
+
+function collectSelectedEquipment(registry: CompendiumRegistry, build: CharacterBuild): ResolvedEquipment[] {
+  return build.equipmentSelections.flatMap(selection => {
+    const entity = asEquipment(findEntityByIdOrName(registry, selection.equipmentId))
+    if (!entity) return []
+    const item: ResolvedEquipment = {
+      selectionId: selection.selectionId,
+      equipmentId: entity.id,
+      name: entity.name,
+      equipmentFamily: entity.equipmentFamily,
+      quantity: selection.quantity ?? 1,
+      sourceLabels: [selection.sourceSlotId ?? 'build'],
+    }
+    if (entity.subcategory) item.subcategory = entity.subcategory
+    if (selection.equippedSlotId) item.equippedSlotId = selection.equippedSlotId
+    if (entity.eligibleSlots?.length) item.eligibleSlots = entity.eligibleSlots
+    if (entity.wpCategory) item.wpCategory = entity.wpCategory
+    const notes = selection.notes?.length ? selection.notes : entity.notes
+    if (notes?.length) item.notes = notes
+    return [item]
+  })
+}
+
 function dedupeSkills(skills: ResolvedSkill[]): ResolvedSkill[] {
   const seen = new Set<string>()
   return skills.filter(skill => {
@@ -114,7 +175,18 @@ function dedupeSkills(skills: ResolvedSkill[]): ResolvedSkill[] {
   })
 }
 
+function dedupeEquipment(items: ResolvedEquipment[]): ResolvedEquipment[] {
+  const seen = new Set<string>()
+  return items.filter(item => {
+    const key = `${item.selectionId ?? ''}:${item.equipmentId}:${item.equippedSlotId ?? ''}:${item.sourceLabels?.join('|') ?? ''}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
 function collectValidationIssues(
+  registry: CompendiumRegistry,
   build: CharacterBuild,
   race: CompendiumRace | null,
   rcc: CompendiumRcc | null,
@@ -152,6 +224,26 @@ function collectValidationIssues(
       message: `OCC not found in registry: ${build.occId}`,
     })
   }
+  for (const selection of build.equipmentSelections) {
+    const entity = findEntityByIdOrName(registry, selection.equipmentId)
+    if (!entity) {
+      issues.push({
+        id: `unknown-equipment-${selection.selectionId}`,
+        severity: 'error',
+        scope: 'build',
+        message: `Equipment not found in registry: ${selection.equipmentId}`,
+      })
+      continue
+    }
+    if (entity.kind !== 'equipment') {
+      issues.push({
+        id: `invalid-equipment-${selection.selectionId}`,
+        severity: 'error',
+        scope: 'build',
+        message: `Build selection is not an equipment entity: ${selection.equipmentId}`,
+      })
+    }
+  }
   return issues
 }
 
@@ -170,8 +262,10 @@ export function resolveCharacterBuild({ registry, build }: ResolveCharacterInput
   const pools = sources.flatMap(source => collectPools(source.name, source.resourcePools))
   const directSkills = sources.flatMap(source => collectDirectSkills(registry, source.name, source.grants))
   const selectedSkills = collectSelectedSkills(registry, build)
+  const directEquipment = sources.flatMap(source => collectDirectEquipment(registry, source.name, source.grants))
+  const selectedEquipment = collectSelectedEquipment(registry, build)
   const availableChoices = sources.flatMap(source => collectChoiceSlots(source.name, source.grants))
-  const validation = collectValidationIssues(build, race, rcc, occ)
+  const validation = collectValidationIssues(registry, build, race, rcc, occ)
 
   return {
     actorId: build.id,
@@ -183,6 +277,7 @@ export function resolveCharacterBuild({ registry, build }: ResolveCharacterInput
     powers: [] satisfies ResolvedPower[],
     spells: [] satisfies ResolvedSpell[],
     attacks: [] satisfies ResolvedAttack[],
+    equipment: dedupeEquipment([...directEquipment, ...selectedEquipment]),
     modifiers: modifiers.map(modifier => ({
       ...modifier,
       appliedValue: modifier.value,
@@ -195,7 +290,7 @@ export function resolveCharacterBuild({ registry, build }: ResolveCharacterInput
         target: 'character',
         label: 'Phase 1 resolver',
         sourceLabels: sources.map(source => source.name),
-        notes: ['Resolved race/RCC/OCC grants, resource pools, direct skills, and choice slots.'],
+        notes: ['Resolved race/RCC/OCC grants, resource pools, direct skills, equipment loadout, and choice slots.'],
       },
     ],
   }
@@ -212,6 +307,7 @@ export function createStarterResolvedCharacter(): ResolvedCharacter {
     powers: [],
     spells: [],
     attacks: [],
+    equipment: [],
     modifiers: [],
     availableChoices: [],
     validation: [],

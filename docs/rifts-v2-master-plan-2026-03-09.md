@@ -112,6 +112,7 @@ Deliverables:
 - normalized compendium registry
 - validation pipeline
 - source-reference preservation
+- equipment and vehicle catalog normalization as first-class entities
 
 ### D. Resolver Core
 
@@ -218,6 +219,9 @@ Exit criteria:
 
 Goal:
 - ingest current v1 content into normalized V2 entities
+
+Near-term target:
+- keep equipment and vehicles inside the same normalization program as races/OCCs/skills, not as a later inventory subsystem
 
 Deliverables:
 - adapters for:

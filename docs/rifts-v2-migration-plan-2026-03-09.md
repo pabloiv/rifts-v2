@@ -171,9 +171,9 @@ That means:
 - local import scripts may read from the v1 repo
 - core adapter functions should operate on passed-in raw content, not on hardcoded local paths
 
-## 7. First Adapter Slice
+## 7. Adapter Sequencing
 
-The first adapter slice should cover:
+The first adapter slice covered:
 - races
 - RCCs
 - OCCs
@@ -183,12 +183,18 @@ Reason:
 - those four define most character legality and structure
 - they also exercise grants, modifiers, requirements, pools, and compatibility
 
-The first slice does not need to fully solve:
+The current next adapter slice adds:
+- canonical equipment catalog normalization
+- first-class vehicle entities from the same source catalog
+- `CharacterBuild` equipment selections and resolved loadout output
+
+This slice still does not fully solve:
 - spell definitions
 - full psionic definitions
-- equipment/vehicle normalization
+- OCC starting gear packages expressed only as prose
+- vehicle crew station behavior
 
-Those can follow once entity and resolver patterns are proven.
+Those follow once the entity and resolver patterns are proven and the catalog import path is stable.
 
 ## 8. What Must Survive the Migration
 
@@ -201,6 +207,7 @@ The adapter layer must preserve these already-working v1 behaviors:
 - spell acquisition channel metadata
 - RCC/OCC race handoff
 - dragon-specific resource and progression modeling
+- equipment catalog identity, weapon modes, and armor/vehicle MDC pools
 
 If a V2 adapter cannot preserve a behavior yet, it must mark that gap explicitly.
 

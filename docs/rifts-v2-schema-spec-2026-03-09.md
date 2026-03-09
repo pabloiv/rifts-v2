@@ -58,6 +58,11 @@ The most important architectural rule is the separation of five concepts:
 
 No document should try to be two of these at once.
 
+Applied to equipment:
+- `CharacterBuild` owns selected loadout items
+- `PlayState` owns mutable per-item state such as charges and tracked equipment pools
+- `ResolvedActor` owns the computed equipment list presented to the UI
+
 ## 3. Common Types
 
 ### `SourceRef`
@@ -206,10 +211,19 @@ Represents an item, weapon, armor, device, consumable, or gear piece.
 Minimum fields:
 - base entity fields
 - `equipmentFamily: EquipmentFamily`
+- `subcategory?: string | null`
+- `costCredits?: number | null`
+- `mass?: MeasurementValue | null`
+- `hands?: number | null`
+- `eligibleSlots?: string[]`
+- `wpCategory?: string | null`
+- `systems?: EquipmentSystemProfile | null`
+- `weaponModes?: EquipmentModeProfile[]`
 - `resourcePools?: ResourcePoolDefinition[]`
 - `grants?: Grant[]`
 - `modifiers?: Modifier[]`
 - `actions?: ActionProfile[]`
+- `notes?: string[]`
 
 ### `CompendiumVehicle`
 
@@ -218,10 +232,17 @@ Represents a vehicle as a first-class entity, not just a gear row.
 Minimum fields:
 - base entity fields
 - `vehicleFamily: string`
+- `subcategory?: string | null`
+- `costCredits?: number | null`
+- `mass?: MeasurementValue | null`
+- `crew?: number | null`
+- `passengerCapacity?: number | null`
+- `systems?: EquipmentSystemProfile | null`
 - `resourcePools?: ResourcePoolDefinition[]`
 - `stations?: VehicleStationDefinition[]`
 - `actions?: ActionProfile[]`
 - `modifiers?: Modifier[]`
+- `notes?: string[]`
 
 ## 5. Grants
 
@@ -371,6 +392,7 @@ Minimum fields:
 - `powerSelections: PowerSelection[]`
 - `spellSelections: SpellSelection[]`
 - `packageSelections: PackageSelection[]`
+- `equipmentSelections: EquipmentSelection[]`
 - `levelSelections: LevelSelectionRecord[]`
 - `notes?: string`
 
@@ -492,6 +514,7 @@ Minimum fields:
 - `powers: ResolvedPower[]`
 - `spells: ResolvedSpell[]`
 - `attacks: ResolvedAttack[]`
+- `equipment: ResolvedEquipment[]`
 - `modifiers: AppliedModifier[]`
 - `availableChoices: ChoiceSlot[]`
 - `validation: ValidationIssue[]`

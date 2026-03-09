@@ -176,6 +176,28 @@ export interface DamageProfile {
   notes?: string[]
 }
 
+export interface MeasurementValue {
+  value: number
+  unit: string
+}
+
+export interface EquipmentSystemProfile {
+  sensors?: string[]
+  comms?: string[]
+  environmental?: string[]
+}
+
+export interface EquipmentModeProfile {
+  id: string
+  label: string
+  damage?: DamageProfile | null
+  range?: string | null
+  rateOfFire?: string | null
+  payloadType?: string | null
+  payloadCapacity?: number | null
+  notes?: string[]
+}
+
 export interface TargetingRule {
   mode: 'self' | 'single_target' | 'multi_target' | 'area' | 'line' | 'cone' | 'vehicle_station' | 'special'
   targetTypes: TargetType[]
@@ -433,19 +455,35 @@ export interface CompendiumAttack extends CompendiumEntityBase {
 export interface CompendiumEquipment extends CompendiumEntityBase {
   kind: 'equipment'
   equipmentFamily: EquipmentFamily
+  subcategory?: string | null
+  costCredits?: number | null
+  mass?: MeasurementValue | null
+  hands?: number | null
+  eligibleSlots?: string[]
+  wpCategory?: string | null
+  systems?: EquipmentSystemProfile | null
+  weaponModes?: EquipmentModeProfile[]
   resourcePools?: ResourcePoolDefinition[]
   grants?: Grant[]
   modifiers?: Modifier[]
   actions?: ActionProfile[]
+  notes?: string[]
 }
 
 export interface CompendiumVehicle extends CompendiumEntityBase {
   kind: 'vehicle'
   vehicleFamily: string
+  subcategory?: string | null
+  costCredits?: number | null
+  mass?: MeasurementValue | null
+  crew?: number | null
+  passengerCapacity?: number | null
+  systems?: EquipmentSystemProfile | null
   resourcePools?: ResourcePoolDefinition[]
   stations?: VehicleStationDefinition[]
   actions?: ActionProfile[]
   modifiers?: Modifier[]
+  notes?: string[]
 }
 
 export type CompendiumEntity =
@@ -496,6 +534,15 @@ export interface PackageSelection {
   sourceSlotId?: string | null
 }
 
+export interface EquipmentSelection {
+  selectionId: string
+  equipmentId: Identifier
+  quantity?: number | null
+  sourceSlotId?: string | null
+  equippedSlotId?: string | null
+  notes?: string[]
+}
+
 export interface LevelSelectionRecord {
   level: number
   skillSelections?: SkillSelection[]
@@ -518,6 +565,7 @@ export interface CharacterBuild {
   powerSelections: PowerSelection[]
   spellSelections: SpellSelection[]
   packageSelections: PackageSelection[]
+  equipmentSelections: EquipmentSelection[]
   levelSelections: LevelSelectionRecord[]
   notes?: string
 }
@@ -659,6 +707,20 @@ export interface ResolvedAttack {
   notes?: string[]
 }
 
+export interface ResolvedEquipment {
+  selectionId?: string | null
+  equipmentId: Identifier
+  name: string
+  equipmentFamily: EquipmentFamily
+  quantity: number
+  subcategory?: string | null
+  equippedSlotId?: string | null
+  eligibleSlots?: string[]
+  wpCategory?: string | null
+  sourceLabels?: string[]
+  notes?: string[]
+}
+
 export interface AppliedModifier extends ModifierBase {
   appliedValue: number
 }
@@ -689,6 +751,7 @@ export interface ResolvedActor {
   powers: ResolvedPower[]
   spells: ResolvedSpell[]
   attacks: ResolvedAttack[]
+  equipment: ResolvedEquipment[]
   modifiers: AppliedModifier[]
   availableChoices: ChoiceSlot[]
   validation: ValidationIssue[]
@@ -723,6 +786,7 @@ export function createEmptyCharacterBuild(): CharacterBuild {
     powerSelections: [],
     spellSelections: [],
     packageSelections: [],
+    equipmentSelections: [],
     levelSelections: [],
     notes: '',
   }

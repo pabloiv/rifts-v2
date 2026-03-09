@@ -2,11 +2,14 @@ import type { CompendiumEntity, EntityKind } from '@rifts-v2/schema'
 import { createCompendiumRegistry } from './registry.ts'
 
 export {
+  adaptV1Equipment,
   adaptV1OccLike,
   adaptV1Race,
   adaptV1Skill,
+  adaptV1Vehicle,
 } from './adapters/v1.ts'
 export type {
+  V1EquipmentRaw,
   V1OccRaw,
   V1RaceRaw,
   V1SkillRaw,
