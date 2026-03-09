@@ -4,15 +4,21 @@ import { createCompendiumRegistry } from './registry.ts'
 export {
   adaptV1Equipment,
   adaptV1OccLike,
+  adaptV1OccLikeExtraEntities,
+  adaptV1Power,
   adaptV1Race,
+  adaptV1RaceExtraEntities,
   adaptV1Skill,
+  adaptV1Spell,
   adaptV1Vehicle,
 } from './adapters/v1.ts'
 export type {
   V1EquipmentRaw,
   V1OccRaw,
+  V1PowerRaw,
   V1RaceRaw,
   V1SkillRaw,
+  V1SpellRaw,
 } from './adapters/v1.ts'
 export { createCompendiumRegistry } from './registry.ts'
 export type { CompendiumRegistry } from './registry.ts'

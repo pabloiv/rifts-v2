@@ -3,9 +3,11 @@ import type {
   ChoiceSlot,
   CompendiumEquipment,
   CompendiumOcc,
+  CompendiumPower,
   CompendiumRace,
   CompendiumRcc,
   CompendiumSkill,
+  CompendiumSpell,
   CompendiumVehicle,
   DamageProfile,
   EquipmentModeProfile,
@@ -66,6 +68,15 @@ export interface V1RaceRaw {
   skills?: {
     granted?: V1GrantedSkill[]
   }
+  psionics?: {
+    type?: string
+    classification?: string
+    startingPowers?: string[]
+    startingSelections?: V1PsionicSelectionRaw[]
+    levelSelections?: V1PsionicSelectionRaw[]
+    customPowers?: V1CustomPowerRaw[]
+    notes?: string[]
+  }
   modifiers?: {
     saves?: V1SaveBonus[]
     combat?: Record<string, number>
@@ -109,6 +120,26 @@ export interface V1OccRaw {
   skills?: {
     granted?: V1GrantedSkill[]
   }
+  psionics?: {
+    type?: string
+    classification?: string
+    startingPowers?: string[]
+    startingSelections?: V1PsionicSelectionRaw[]
+    levelSelections?: V1PsionicSelectionRaw[]
+    customPowers?: V1CustomPowerRaw[]
+    notes?: string[]
+  } | null
+  spells?: {
+    enabled?: boolean
+    customSpells?: V1CustomSpellRaw[]
+    progression?: {
+      initial?: V1SpellProgressionEntryRaw[]
+      perLevel?: V1SpellProgressionEntryRaw[]
+    }
+    acquisition?: {
+      notes?: string
+    }
+  } | null
   notes?: string[]
 }
 
@@ -127,6 +158,79 @@ export interface V1SkillRaw {
     specializationLabel?: string
     specializationOptions?: string[]
   }
+}
+
+export interface V1PowerRaw {
+  id: string
+  name: string
+  category?: string | null
+  summary?: string | null
+  fullDesc?: string | null
+  costLabel?: string | null
+  costValue?: number | null
+  range?: string | null
+  duration?: string | null
+  saveType?: string | null
+}
+
+export interface V1SpellRaw {
+  id: string
+  name: string
+  level?: number | null
+  ppeCost?: number | null
+  range?: string | null
+  duration?: string | null
+  saveType?: string | null
+  saveDifficulty?: number | null
+  desc?: string | null
+}
+
+type V1PsionicSelectionRaw = {
+  id?: string
+  name?: string
+  count?: number
+  powerIds?: string[]
+  categories?: string[]
+  at?: number[]
+  notes?: string | string[]
+}
+
+type V1SpellProgressionEntryRaw = {
+  type?: string
+  at?: number
+  startAt?: number
+  repeat?: string
+  count?: number
+  allowedSpellLevels?: number[]
+  allowedSpellIds?: string[]
+  maxSpellLevelEqualsCharacterLevel?: boolean
+  label?: string
+  spellIds?: string[]
+  notes?: string | string[]
+}
+
+type V1CustomPowerRaw = {
+  id?: string
+  name?: string
+  category?: string
+  cost?: string | number | null
+  costValue?: number | null
+  range?: string | null
+  duration?: string | null
+  desc?: string | null
+  fullDesc?: string | null
+}
+
+type V1CustomSpellRaw = {
+  id?: string
+  name?: string
+  level?: number | null
+  ppeCost?: number | null
+  range?: string | null
+  duration?: string | null
+  saveType?: string | null
+  saveDifficulty?: number | null
+  desc?: string | null
 }
 
 type V1WeaponPayloadRaw = {
@@ -429,6 +533,242 @@ function mapV1Progression(prefix: string, progression?: V1OccRaw['progression'])
   })
 }
 
+function normalizePowerCategory(category?: string | null): string | null {
+  if (!category) return null
+  return String(category).trim().toLowerCase()
+}
+
+function makeChoiceSlotFromPsionics(prefix: string, selection: V1PsionicSelectionRaw): ChoiceSlot {
+  const slot: ChoiceSlot = {
+    id: selection.id ?? `${prefix}-${Math.random().toString(36).slice(2, 8)}`,
+    choiceFamily: 'power',
+    label: selection.name ?? 'Choose powers',
+    count: selection.count ?? 1,
+    allowedEntityKinds: ['power'],
+  }
+  if (selection.powerIds?.length) slot.allowedIds = selection.powerIds
+  if (selection.categories?.length) {
+    slot.filters = [{
+      key: 'tag',
+      values: selection.categories.map(category => `power-category:${normalizePowerCategory(category)}`),
+      mode: 'include',
+    }]
+  }
+  return slot
+}
+
+function makeChoiceSlotFromSpellEntry(
+  prefix: string,
+  entry: V1SpellProgressionEntryRaw,
+  idSuffix: string,
+  levelHint: number | null = null,
+): ChoiceSlot {
+  const slot: ChoiceSlot = {
+    id: `${prefix}-${idSuffix}`,
+    choiceFamily: 'spell',
+    label: entry.label ?? 'Choose spells',
+    count: entry.count ?? 1,
+    allowedEntityKinds: ['spell'],
+  }
+  if (entry.allowedSpellIds?.length) slot.allowedIds = entry.allowedSpellIds
+  if (entry.allowedSpellLevels?.length) {
+    slot.filters = [{
+      key: 'spell_level_any',
+      values: entry.allowedSpellLevels.map(value => String(value)),
+      mode: 'include',
+    }]
+  } else if (entry.maxSpellLevelEqualsCharacterLevel) {
+    const maxLevel = levelHint ?? entry.startAt ?? entry.at ?? 1
+    slot.filters = [{
+      key: 'spell_level_max',
+      values: [String(maxLevel)],
+      mode: 'include',
+    }]
+  }
+  return slot
+}
+
+function mapV1PsionicGrants(prefix: string, psionics?: V1RaceRaw['psionics'] | V1OccRaw['psionics']): Grant[] {
+  if (!psionics || typeof psionics !== 'object') return []
+  const grants: Grant[] = []
+
+  for (const powerId of psionics.startingPowers ?? []) {
+    grants.push({
+      id: `${prefix}-power-${powerId}`,
+      kind: 'grant_power',
+      powerId,
+    })
+  }
+
+  for (const [index, selection] of (psionics.startingSelections ?? []).entries()) {
+    const notes = asNotes(selection.notes)
+    const grant: Grant = {
+      id: selection.id ?? `${prefix}-power-choice-${index + 1}`,
+      kind: 'grant_power_choice',
+      slot: makeChoiceSlotFromPsionics(prefix, selection),
+    }
+    if (notes) grant.notes = notes
+    grants.push(grant)
+  }
+
+  for (const [index, selection] of (psionics.levelSelections ?? []).entries()) {
+    const levels = selection.at ?? []
+    for (const level of levels) {
+      const notes = asNotes(selection.notes)
+      const nestedGrant: Grant = {
+        id: `${selection.id ?? `${prefix}-power-choice-level-${index + 1}`}-grant-${level}`,
+        kind: 'grant_power_choice',
+        slot: makeChoiceSlotFromPsionics(`${prefix}-level-${level}`, selection),
+      }
+      if (notes) nestedGrant.notes = notes
+      grants.push({
+        id: `${selection.id ?? `${prefix}-power-choice-level-${index + 1}`}-${level}`,
+        kind: 'unlock_at_level',
+        level,
+        grants: [nestedGrant],
+      })
+    }
+  }
+
+  return grants
+}
+
+function mapSpellEntryToGrants(prefix: string, entry: V1SpellProgressionEntryRaw, idSuffix: string, levelHint: number | null = null): Grant[] {
+  if (entry.type === 'grant_specific_list' && entry.spellIds?.length) {
+    return entry.spellIds.map((spellId, index) => ({
+      id: `${prefix}-${idSuffix}-spell-${index + 1}`,
+      kind: 'grant_spell',
+      spellId,
+    }) satisfies Grant)
+  }
+
+  if (
+    entry.type === 'pick_by_level_range'
+    || entry.type === 'pick_by_level_cap'
+  ) {
+    const notes = asNotes(entry.notes)
+    const grant: Grant = {
+      id: `${prefix}-${idSuffix}-choice`,
+      kind: 'grant_spell_choice',
+      slot: makeChoiceSlotFromSpellEntry(prefix, entry, `${idSuffix}-slot`, levelHint),
+    }
+    if (notes) grant.notes = notes
+    return [grant]
+  }
+
+  return []
+}
+
+function mapV1SpellGrants(prefix: string, spells?: V1OccRaw['spells']): Grant[] {
+  if (!spells?.enabled) return []
+  const grants: Grant[] = []
+
+  for (const [index, entry] of (spells.progression?.initial ?? []).entries()) {
+    const level = entry.at ?? 1
+    const mapped = mapSpellEntryToGrants(prefix, entry, `initial-${index + 1}`, level)
+    if (level <= 1) grants.push(...mapped)
+    else if (mapped.length) {
+      grants.push({
+        id: `${prefix}-spell-unlock-initial-${index + 1}-${level}`,
+        kind: 'unlock_at_level',
+        level,
+        grants: mapped,
+      })
+    }
+  }
+
+  for (const [index, entry] of (spells.progression?.perLevel ?? []).entries()) {
+    if (entry.repeat === 'each_level') {
+      const startAt = entry.startAt ?? entry.at ?? 1
+      for (let level = startAt; level <= 15; level += 1) {
+        const mapped = mapSpellEntryToGrants(prefix, entry, `per-level-${index + 1}-${level}`, level)
+        if (!mapped.length) continue
+        grants.push({
+          id: `${prefix}-spell-unlock-repeat-${index + 1}-${level}`,
+          kind: 'unlock_at_level',
+          level,
+          grants: mapped,
+        })
+      }
+      continue
+    }
+
+    const level = entry.at ?? entry.startAt ?? 1
+    const mapped = mapSpellEntryToGrants(prefix, entry, `per-level-${index + 1}`, level)
+    if (!mapped.length) continue
+    grants.push({
+      id: `${prefix}-spell-unlock-${index + 1}-${level}`,
+      kind: 'unlock_at_level',
+      level,
+      grants: mapped,
+    })
+  }
+
+  return grants
+}
+
+function adaptCustomPower(raw: V1CustomPowerRaw): CompendiumPower | null {
+  if (!raw.id || !raw.name) return null
+  const tags = ['source:custom']
+  const category = normalizePowerCategory(raw.category)
+  if (category) tags.push(`power-category:${category}`)
+
+  const power: CompendiumPower = {
+    id: raw.id,
+    kind: 'power',
+    name: raw.name,
+    source: {
+      book: 'Imported custom psionic entry from v1',
+      page: null,
+    },
+    powerFamily: 'psionic',
+    tags,
+  }
+  if (raw.desc) power.summary = raw.desc
+  const notes = [
+    ...(raw.fullDesc ? [raw.fullDesc] : []),
+    ...(raw.range ? [`Range: ${raw.range}`] : []),
+    ...(raw.duration ? [`Duration: ${raw.duration}`] : []),
+    ...(raw.cost != null ? [`Cost: ${String(raw.cost)}`] : []),
+  ]
+  if (raw.costValue != null) {
+    power.cost = {
+      kind: 'isp',
+      amount: raw.costValue,
+    }
+  }
+  if (notes.length) power.notes = notes
+  return power
+}
+
+function adaptCustomSpell(raw: V1CustomSpellRaw): CompendiumSpell | null {
+  if (!raw.id || !raw.name) return null
+  const spell: CompendiumSpell = {
+    id: raw.id,
+    kind: 'spell',
+    name: raw.name,
+    source: {
+      book: 'Imported custom spell entry from v1',
+      page: null,
+    },
+    level: raw.level ?? null,
+  }
+  if (raw.desc) spell.summary = raw.desc
+  if (raw.ppeCost != null) {
+    spell.cost = {
+      kind: 'ppe',
+      amount: raw.ppeCost,
+    }
+  }
+  const notes = [
+    ...(raw.range ? [`Range: ${raw.range}`] : []),
+    ...(raw.duration ? [`Duration: ${raw.duration}`] : []),
+    ...(raw.saveType ? [`Save: ${raw.saveType}${raw.saveDifficulty != null ? ` ${raw.saveDifficulty}` : ''}`] : []),
+  ]
+  if (notes.length) spell.notes = notes
+  return spell
+}
+
 function mapDamageScale(raw?: string): DamageProfile['scale'] {
   const normalized = raw?.trim().toLowerCase()
   if (normalized === 'sdc') return 'sdc'
@@ -555,7 +895,10 @@ export function adaptV1Race(raw: V1RaceRaw): CompendiumRace {
     kind: 'race',
     name: raw.name,
     source: mapSource(raw.source),
-    grants: mapV1GrantedSkills(raw.id, raw.skills?.granted),
+    grants: [
+      ...mapV1GrantedSkills(raw.id, raw.skills?.granted),
+      ...mapV1PsionicGrants(raw.id, raw.psionics),
+    ],
     modifiers: [
       ...mapV1SavesToModifiers(raw.id, raw.modifiers?.saves),
       ...mapV1CombatToModifiers(raw.id, raw.modifiers?.combat),
@@ -581,7 +924,11 @@ export function adaptV1OccLike(raw: V1OccRaw): CompendiumOcc | CompendiumRcc {
     id: raw.id,
     name: raw.name,
     source: mapSource(raw.source),
-    grants: mapV1GrantedSkills(raw.id, raw.skills?.granted),
+    grants: [
+      ...mapV1GrantedSkills(raw.id, raw.skills?.granted),
+      ...mapV1PsionicGrants(raw.id, raw.psionics),
+      ...mapV1SpellGrants(raw.id, raw.spells),
+    ],
     modifiers: [
       ...mapV1SavesToModifiers(raw.id, raw.bonuses?.saves),
       ...mapV1CombatToModifiers(raw.id, raw.bonuses?.combat),
@@ -616,7 +963,10 @@ export function adaptV1OccLike(raw: V1OccRaw): CompendiumOcc | CompendiumRcc {
   if (progression.length) setIfPresent(entity, 'progression', progression)
   const requirements = mapV1Requirements(raw.requirements)
   if (requirements) setIfPresent(entity, 'requirements', requirements)
-  if (notes.length) setIfPresent(entity, 'notes', notes)
+  const spellNotes = raw.spells?.acquisition?.notes ? [raw.spells.acquisition.notes] : []
+  const psionicNotes = raw.psionics?.notes ?? []
+  const mergedNotes = [...notes, ...psionicNotes, ...spellNotes]
+  if (mergedNotes.length) setIfPresent(entity, 'notes', mergedNotes)
   return entity
 }
 
@@ -709,4 +1059,76 @@ export function adaptV1Vehicle(raw: V1EquipmentRaw): CompendiumVehicle {
   const notes = mapEquipmentNotes(raw)
   if (notes) vehicle.notes = notes
   return vehicle
+}
+
+export function adaptV1Power(raw: V1PowerRaw): CompendiumPower {
+  const tags = ['source:v1']
+  const category = normalizePowerCategory(raw.category)
+  if (category) tags.push(`power-category:${category}`)
+
+  const power: CompendiumPower = {
+    id: raw.id,
+    kind: 'power',
+    name: raw.name,
+    source: {
+      book: 'Imported from v1 psionics catalog',
+      page: null,
+    },
+    powerFamily: 'psionic',
+    tags,
+  }
+  if (raw.summary) power.summary = raw.summary
+  if (raw.costValue != null) {
+    power.cost = {
+      kind: 'isp',
+      amount: raw.costValue,
+    }
+  }
+  const notes = [
+    ...(raw.fullDesc ? [raw.fullDesc] : []),
+    ...(raw.range ? [`Range: ${raw.range}`] : []),
+    ...(raw.duration ? [`Duration: ${raw.duration}`] : []),
+    ...(raw.costLabel ? [`Cost: ${raw.costLabel}`] : []),
+    ...(raw.saveType ? [`Save: ${raw.saveType}`] : []),
+  ]
+  if (notes.length) power.notes = notes
+  return power
+}
+
+export function adaptV1Spell(raw: V1SpellRaw): CompendiumSpell {
+  const spell: CompendiumSpell = {
+    id: raw.id,
+    kind: 'spell',
+    name: raw.name,
+    source: {
+      book: 'Imported from v1 spell catalog',
+      page: null,
+    },
+    level: raw.level ?? null,
+  }
+  if (raw.desc) spell.summary = raw.desc
+  if (raw.ppeCost != null) {
+    spell.cost = {
+      kind: 'ppe',
+      amount: raw.ppeCost,
+    }
+  }
+  if (raw.range) spell.range = raw.range
+  if (raw.duration) spell.duration = raw.duration
+  const notes = raw.saveType ? [`Save: ${raw.saveType}${raw.saveDifficulty != null ? ` ${raw.saveDifficulty}` : ''}`] : []
+  if (notes.length) spell.notes = notes
+  return spell
+}
+
+export function adaptV1RaceExtraEntities(raw: V1RaceRaw): Array<CompendiumPower | CompendiumSpell> {
+  return [
+    ...((raw.psionics?.customPowers ?? []).map(adaptCustomPower).filter(Boolean) as CompendiumPower[]),
+  ]
+}
+
+export function adaptV1OccLikeExtraEntities(raw: V1OccRaw): Array<CompendiumPower | CompendiumSpell> {
+  return [
+    ...((raw.psionics?.customPowers ?? []).map(adaptCustomPower).filter(Boolean) as CompendiumPower[]),
+    ...((raw.spells?.customSpells ?? []).map(adaptCustomSpell).filter(Boolean) as CompendiumSpell[]),
+  ]
 }

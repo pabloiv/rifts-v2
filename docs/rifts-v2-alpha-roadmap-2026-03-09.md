@@ -6,6 +6,10 @@ Status:
 - Working roadmap for the first browser-testable V2
 - Aligned with the V2 project bible, master plan, schema spec, and migration plan
 - Intended to minimize intervention while keeping the build sequence explicit
+- Current implementation state:
+  - `M1 Resolver Core`: complete
+  - `M2 Powers and Magic`: complete for normalized import plus resolver output
+  - `M3 Combat Surface`: next
 
 Related documents:
 - [rifts-v2-project-bible-2026-03-09.md](/home/pablo/rifts-v2/docs/rifts-v2-project-bible-2026-03-09.md)
@@ -63,6 +67,13 @@ Scope:
 Exit criteria:
 - `Noro`, `Mystic`, `Ley Line Walker`, and dragon fixtures show real resolved powers and/or spells
 - choice slots for power/spell picks appear in the resolver output
+
+Status:
+- Complete for alpha foundation
+- Canonical powers and spells are imported
+- custom OCC powers/spells are normalized as V2 entities
+- race/OCC/RCC power and spell grants now resolve in the rules engine
+- fixture coverage includes direct racial powers and selected Mystic powers/spells
 
 ### M3. Combat Surface
 
@@ -130,11 +141,9 @@ Not required before first testing:
 
 ## Current Immediate Sequence
 
-1. Finish `M1` and keep fixture parity green.
-2. Implement `M2` with normalized power/spell compendium import.
-3. Implement `M3` so attacks are visible in resolved output.
-4. Build `M4` fixture viewer as the first browser-testable V2 surface.
-5. Build `M5` limited editor after the resolver output is trustworthy.
+1. Implement `M3` so attacks are visible in resolved output.
+2. Build `M4` fixture viewer as the first browser-testable V2 surface.
+3. Build `M5` limited editor after the resolver output is trustworthy.
 
 ## Success Standard
 

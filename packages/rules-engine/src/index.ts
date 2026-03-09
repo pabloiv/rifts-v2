@@ -4,9 +4,11 @@ import type {
   CompendiumEntity,
   CompendiumEquipment,
   CompendiumOcc,
+  CompendiumPower,
   CompendiumRace,
   CompendiumRcc,
   CompendiumSkill,
+  CompendiumSpell,
   Grant,
   Modifier,
   ProgressionTrack,
@@ -57,6 +59,14 @@ function asEquipment(entity: CompendiumEntity | null): CompendiumEquipment | nul
 
 function asSkill(entity: CompendiumEntity | null): CompendiumSkill | null {
   return entity?.kind === 'skill' ? entity : null
+}
+
+function asPower(entity: CompendiumEntity | null): CompendiumPower | null {
+  return entity?.kind === 'power' ? entity : null
+}
+
+function asSpell(entity: CompendiumEntity | null): CompendiumSpell | null {
+  return entity?.kind === 'spell' ? entity : null
 }
 
 function clampSkillPercent(value: number | null): number | null {
@@ -126,6 +136,28 @@ function collectChoiceSlots(sourceLabel: string, grants: Grant[]): ChoiceSlot[] 
       sourceLabel: grant.sourceLabel ?? sourceLabel,
     }]
   })
+}
+
+function resolveSelectedPowerGrant(sourceContexts: SourceContext[], sourceSlotId: string | null | undefined) {
+  if (!sourceSlotId) return null
+  for (const context of sourceContexts) {
+    for (const grant of context.grants) {
+      if (grant.kind !== 'grant_power_choice') continue
+      if (grant.slot.id === sourceSlotId) return grant
+    }
+  }
+  return null
+}
+
+function resolveSelectedSpellGrant(sourceContexts: SourceContext[], sourceSlotId: string | null | undefined) {
+  if (!sourceSlotId) return null
+  for (const context of sourceContexts) {
+    for (const grant of context.grants) {
+      if (grant.kind !== 'grant_spell_choice') continue
+      if (grant.slot.id === sourceSlotId) return grant
+    }
+  }
+  return null
 }
 
 function toKnownSkillRefs(registry: CompendiumRegistry, build: CharacterBuild, sourceContexts: SourceContext[]): Set<string> {
@@ -209,6 +241,17 @@ function matchesSlotFilter(entity: CompendiumEntity, slot: ChoiceSlot): boolean 
     if (filter.key === 'tag') {
       const tags = entity.tags ?? []
       const match = values.some(value => tags.includes(value))
+      return filter.mode === 'exclude' ? !match : match
+    }
+    if (filter.key === 'spell_level_any' && entity.kind === 'spell') {
+      const level = entity.level
+      const match = level != null ? values.includes(String(level)) : false
+      return filter.mode === 'exclude' ? !match : match
+    }
+    if (filter.key === 'spell_level_max' && entity.kind === 'spell') {
+      const level = entity.level
+      const maxLevel = Number(values[0] ?? NaN)
+      const match = level != null && Number.isFinite(maxLevel) ? level <= maxLevel : false
       return filter.mode === 'exclude' ? !match : match
     }
     return true
@@ -326,6 +369,90 @@ function collectDirectEquipment(
   })
 }
 
+function collectDirectPowers(registry: CompendiumRegistry, sourceContexts: SourceContext[]): ResolvedPower[] {
+  return sourceContexts.flatMap(context => context.grants.flatMap(grant => {
+    if (grant.kind !== 'grant_power') return []
+    const entity = asPower(findEntityByIdOrName(registry, grant.powerId))
+    if (!entity) {
+      return [{
+        powerId: grant.powerId,
+        name: grant.powerId,
+        powerFamily: 'psionic',
+        sourceLabels: [context.source.name],
+        ...(grant.notes ? { notes: grant.notes } : {}),
+      }]
+    }
+    return [{
+      powerId: entity.id,
+      name: entity.name,
+      powerFamily: entity.powerFamily,
+      sourceLabels: [context.source.name],
+      ...(entity.notes ? { notes: entity.notes } : {}),
+    }]
+  }))
+}
+
+function collectSelectedPowers(registry: CompendiumRegistry, build: CharacterBuild, sourceContexts: SourceContext[]): ResolvedPower[] {
+  return build.powerSelections.flatMap(selection => {
+    const entity = asPower(findEntityByIdOrName(registry, selection.powerId))
+    if (!entity) return []
+    const grant = resolveSelectedPowerGrant(sourceContexts, selection.sourceSlotId)
+    const sourceLabel = grant?.sourceLabel
+      ?? sourceContexts.find(context => context.grants.some(current => current.kind === 'grant_power_choice' && current.slot.id === selection.sourceSlotId))?.source.name
+      ?? selection.sourceSlotId
+      ?? 'build'
+    return [{
+      powerId: entity.id,
+      name: entity.name,
+      powerFamily: entity.powerFamily,
+      sourceLabels: [sourceLabel],
+      ...(entity.notes ? { notes: entity.notes } : {}),
+    }]
+  })
+}
+
+function collectDirectSpells(registry: CompendiumRegistry, sourceContexts: SourceContext[]): ResolvedSpell[] {
+  return sourceContexts.flatMap(context => context.grants.flatMap(grant => {
+    if (grant.kind !== 'grant_spell') return []
+    const entity = asSpell(findEntityByIdOrName(registry, grant.spellId))
+    if (!entity) {
+      return [{
+        spellId: grant.spellId,
+        name: grant.spellId,
+        sourceLabels: [context.source.name],
+        ...(grant.notes ? { notes: grant.notes } : {}),
+      }]
+    }
+    return [{
+      spellId: entity.id,
+      name: entity.name,
+      level: entity.level,
+      sourceLabels: [context.source.name],
+      ...(entity.notes ? { notes: entity.notes } : {}),
+    }]
+  }))
+}
+
+function collectSelectedSpells(registry: CompendiumRegistry, build: CharacterBuild, sourceContexts: SourceContext[]): ResolvedSpell[] {
+  return build.spellSelections.flatMap(selection => {
+    const entity = asSpell(findEntityByIdOrName(registry, selection.spellId))
+    if (!entity) return []
+    const grant = resolveSelectedSpellGrant(sourceContexts, selection.sourceSlotId)
+    const sourceLabel = grant?.sourceLabel
+      ?? sourceContexts.find(context => context.grants.some(current => current.kind === 'grant_spell_choice' && current.slot.id === selection.sourceSlotId))?.source.name
+      ?? selection.sourceSlotId
+      ?? 'build'
+    return [{
+      spellId: entity.id,
+      name: entity.name,
+      level: entity.level,
+      acquisitionSource: selection.acquisitionSource ?? null,
+      sourceLabels: [sourceLabel],
+      ...(entity.notes ? { notes: entity.notes } : {}),
+    }]
+  })
+}
+
 function collectSelectedEquipment(registry: CompendiumRegistry, build: CharacterBuild): ResolvedEquipment[] {
   return build.equipmentSelections.flatMap(selection => {
     const entity = asEquipment(findEntityByIdOrName(registry, selection.equipmentId))
@@ -362,6 +489,26 @@ function dedupeEquipment(items: ResolvedEquipment[]): ResolvedEquipment[] {
   const seen = new Set<string>()
   return items.filter(item => {
     const key = `${item.selectionId ?? ''}:${item.equipmentId}:${item.equippedSlotId ?? ''}:${item.sourceLabels?.join('|') ?? ''}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function dedupePowers(powers: ResolvedPower[]): ResolvedPower[] {
+  const seen = new Set<string>()
+  return powers.filter(power => {
+    const key = `${power.powerId}:${power.sourceLabels?.join('|') ?? ''}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function dedupeSpells(spells: ResolvedSpell[]): ResolvedSpell[] {
+  const seen = new Set<string>()
+  return spells.filter(spell => {
+    const key = `${spell.spellId}:${spell.sourceLabels?.join('|') ?? ''}:${spell.acquisitionSource ?? ''}`
     if (seen.has(key)) return false
     seen.add(key)
     return true
@@ -524,6 +671,118 @@ function collectValidationIssues(
     }
   }
 
+  const powerSlotSelectionCounts = new Map<string, number>()
+  for (const selection of build.powerSelections) {
+    const entity = findEntityByIdOrName(registry, selection.powerId)
+    if (!entity) {
+      issues.push({
+        id: `unknown-power-${selection.selectionId}`,
+        severity: 'error',
+        scope: 'build',
+        message: `Power not found in registry: ${selection.powerId}`,
+      })
+      continue
+    }
+    if (entity.kind !== 'power') {
+      issues.push({
+        id: `invalid-power-${selection.selectionId}`,
+        severity: 'error',
+        scope: 'build',
+        message: `Build selection is not a power entity: ${selection.powerId}`,
+      })
+      continue
+    }
+    if (selection.sourceSlotId) {
+      powerSlotSelectionCounts.set(selection.sourceSlotId, (powerSlotSelectionCounts.get(selection.sourceSlotId) ?? 0) + 1)
+      const grant = resolveSelectedPowerGrant(sourceContexts, selection.sourceSlotId)
+      if (!grant) {
+        issues.push({
+          id: `missing-power-slot-${selection.selectionId}`,
+          severity: 'error',
+          scope: 'build',
+          message: `No active power choice slot found for ${selection.sourceSlotId}.`,
+        })
+      } else if (!matchesSlotFilter(entity, grant.slot)) {
+        issues.push({
+          id: `illegal-power-slot-${selection.selectionId}`,
+          severity: 'error',
+          scope: 'build',
+          message: `${entity.name} is not a legal choice for slot ${grant.slot.label}.`,
+        })
+      }
+    }
+  }
+  for (const context of sourceContexts) {
+    for (const grant of context.grants) {
+      if (grant.kind !== 'grant_power_choice') continue
+      const used = powerSlotSelectionCounts.get(grant.slot.id) ?? 0
+      if (used > grant.slot.count) {
+        issues.push({
+          id: `overfill-power-slot-${grant.slot.id}`,
+          severity: 'error',
+          scope: 'build',
+          message: `${grant.slot.label} allows ${grant.slot.count} power selections, but ${used} were chosen.`,
+        })
+      }
+    }
+  }
+
+  const spellSlotSelectionCounts = new Map<string, number>()
+  for (const selection of build.spellSelections) {
+    const entity = findEntityByIdOrName(registry, selection.spellId)
+    if (!entity) {
+      issues.push({
+        id: `unknown-spell-${selection.selectionId}`,
+        severity: 'error',
+        scope: 'build',
+        message: `Spell not found in registry: ${selection.spellId}`,
+      })
+      continue
+    }
+    if (entity.kind !== 'spell') {
+      issues.push({
+        id: `invalid-spell-${selection.selectionId}`,
+        severity: 'error',
+        scope: 'build',
+        message: `Build selection is not a spell entity: ${selection.spellId}`,
+      })
+      continue
+    }
+    if (selection.sourceSlotId) {
+      spellSlotSelectionCounts.set(selection.sourceSlotId, (spellSlotSelectionCounts.get(selection.sourceSlotId) ?? 0) + 1)
+      const grant = resolveSelectedSpellGrant(sourceContexts, selection.sourceSlotId)
+      if (!grant) {
+        issues.push({
+          id: `missing-spell-slot-${selection.selectionId}`,
+          severity: 'error',
+          scope: 'build',
+          message: `No active spell choice slot found for ${selection.sourceSlotId}.`,
+        })
+      } else if (!matchesSlotFilter(entity, grant.slot)) {
+        issues.push({
+          id: `illegal-spell-slot-${selection.selectionId}`,
+          severity: 'error',
+          scope: 'build',
+          message: `${entity.name} is not a legal choice for slot ${grant.slot.label}.`,
+        })
+      }
+    }
+  }
+  for (const context of sourceContexts) {
+    for (const grant of context.grants) {
+      if (grant.kind !== 'grant_spell_choice') continue
+      const used = spellSlotSelectionCounts.get(grant.slot.id) ?? 0
+      if (used > grant.slot.count) {
+        issues.push({
+          id: `overfill-spell-slot-${grant.slot.id}`,
+          severity: 'error',
+          scope: 'build',
+          message: `${grant.slot.label} allows ${grant.slot.count} spell selections, but ${used} were chosen.`,
+        })
+      }
+    }
+  }
+
   return issues
 }
 
@@ -544,6 +803,10 @@ export function resolveCharacterBuild({ registry, build }: ResolveCharacterInput
   const pools = sourceContexts.flatMap(context => collectPools(context.source.name, context.source.resourcePools))
   const directSkills = sourceContexts.flatMap(context => collectDirectSkills(registry, build, context))
   const selectedSkills = collectSelectedSkills(registry, build, sourceContexts)
+  const directPowers = collectDirectPowers(registry, sourceContexts)
+  const selectedPowers = collectSelectedPowers(registry, build, sourceContexts)
+  const directSpells = collectDirectSpells(registry, sourceContexts)
+  const selectedSpells = collectSelectedSpells(registry, build, sourceContexts)
   const directEquipment = sourceContexts.flatMap(context => collectDirectEquipment(registry, context.source.name, context.grants))
   const selectedEquipment = collectSelectedEquipment(registry, build)
   const availableChoices = sourceContexts.flatMap(context => collectChoiceSlots(context.source.name, context.grants))
@@ -556,8 +819,8 @@ export function resolveCharacterBuild({ registry, build }: ResolveCharacterInput
     sourceRefs: sources.map(source => source.source),
     pools,
     skills: dedupeSkills([...directSkills, ...selectedSkills]),
-    powers: [] satisfies ResolvedPower[],
-    spells: [] satisfies ResolvedSpell[],
+    powers: dedupePowers([...directPowers, ...selectedPowers]),
+    spells: dedupeSpells([...directSpells, ...selectedSpells]),
     attacks: [] satisfies ResolvedAttack[],
     equipment: dedupeEquipment([...directEquipment, ...selectedEquipment]),
     modifiers: modifiers.map(modifier => ({
@@ -574,7 +837,7 @@ export function resolveCharacterBuild({ registry, build }: ResolveCharacterInput
         sourceLabels: sources.map(source => source.name),
         notes: [
           `Resolved sources through level ${level}.`,
-          'Applied direct grants, unlocked progression modifiers, equipment loadout, and choice slots.',
+          'Applied direct grants, unlocked progression modifiers, power/spell grants, equipment loadout, and choice slots.',
           'Computed base skill totals using imported base percent, per-level growth, source bonuses, and IQ bonus.',
         ],
       },
