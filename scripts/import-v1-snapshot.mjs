@@ -123,6 +123,7 @@ async function main() {
   console.log(`Skills: ${(registry.byKind.get('skill') || []).length}`)
   console.log(`Powers: ${(registry.byKind.get('power') || []).length}`)
   console.log(`Spells: ${(registry.byKind.get('spell') || []).length}`)
+  console.log(`Attacks: ${(registry.byKind.get('attack') || []).length}`)
   console.log(`Equipment: ${(registry.byKind.get('equipment') || []).length}`)
   console.log(`Vehicles: ${(registry.byKind.get('vehicle') || []).length}`)
 
@@ -135,6 +136,8 @@ async function main() {
     console.log(`Skill samples: ${resolved.skills.slice(0, 3).map(skill => `${skill.name}:${skill.total ?? '—'}`).join(', ') || 'none'}`)
     console.log(`Powers: ${resolved.powers.length}`)
     console.log(`Spells: ${resolved.spells.length}`)
+    console.log(`Attacks: ${resolved.attacks.length}`)
+    console.log(`Attack samples: ${resolved.attacks.slice(0, 3).map(attack => `${attack.name}:${attack.damage.formula}`).join(', ') || 'none'}`)
     console.log(`Equipment: ${resolved.equipment.length}`)
     console.log(`Modifiers: ${resolved.modifiers.length}`)
     console.log(`Choices: ${resolved.availableChoices.length}`)

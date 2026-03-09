@@ -9,7 +9,8 @@ Status:
 - Current implementation state:
   - `M1 Resolver Core`: complete
   - `M2 Powers and Magic`: complete for normalized import plus resolver output
-  - `M3 Combat Surface`: next
+  - `M3 Combat Surface`: complete
+  - `M4 Fixture Viewer App`: next
 
 Related documents:
 - [rifts-v2-project-bible-2026-03-09.md](/home/pablo/rifts-v2/docs/rifts-v2-project-bible-2026-03-09.md)
@@ -86,6 +87,12 @@ Exit criteria:
 - dragon fixture shows natural attacks
 - armed mundane fixture shows usable weapon modes in the resolved output
 
+Status:
+- Complete for alpha foundation
+- natural attacks are imported as attack entities and granted through source content
+- equipped weapons expose resolved attack rows from weapon modes
+- parity snapshot now shows attack counts and attack samples
+
 ### M4. Fixture Viewer App
 
 Scope:
@@ -141,9 +148,8 @@ Not required before first testing:
 
 ## Current Immediate Sequence
 
-1. Implement `M3` so attacks are visible in resolved output.
-2. Build `M4` fixture viewer as the first browser-testable V2 surface.
-3. Build `M5` limited editor after the resolver output is trustworthy.
+1. Build `M4` fixture viewer as the first browser-testable V2 surface.
+2. Build `M5` limited editor after the resolver output is trustworthy.
 
 ## Success Standard
 

@@ -1,5 +1,6 @@
 import type {
   CharacterBuild,
+  CompendiumAttack,
   ChoiceSlot,
   CompendiumEntity,
   CompendiumEquipment,
@@ -67,6 +68,10 @@ function asPower(entity: CompendiumEntity | null): CompendiumPower | null {
 
 function asSpell(entity: CompendiumEntity | null): CompendiumSpell | null {
   return entity?.kind === 'spell' ? entity : null
+}
+
+function asAttack(entity: CompendiumEntity | null): CompendiumAttack | null {
+  return entity?.kind === 'attack' ? entity : null
 }
 
 function clampSkillPercent(value: number | null): number | null {
@@ -453,6 +458,34 @@ function collectSelectedSpells(registry: CompendiumRegistry, build: CharacterBui
   })
 }
 
+function collectDirectAttacks(registry: CompendiumRegistry, sourceContexts: SourceContext[]): ResolvedAttack[] {
+  return sourceContexts.flatMap(context => context.grants.flatMap(grant => {
+    if (grant.kind !== 'grant_attack') return []
+    const entity = asAttack(findEntityByIdOrName(registry, grant.attackId))
+    if (!entity) {
+      return [{
+        attackId: grant.attackId,
+        name: grant.attackId,
+        attackFamily: 'natural',
+        damage: {
+          formula: 'Special',
+          scale: 'special',
+        },
+        sourceLabels: [context.source.name],
+        ...(grant.notes ? { notes: grant.notes } : {}),
+      }]
+    }
+    return [{
+      attackId: entity.id,
+      name: entity.name,
+      attackFamily: entity.attackFamily,
+      damage: entity.damage,
+      sourceLabels: [context.source.name],
+      ...(entity.notes ? { notes: entity.notes } : {}),
+    }]
+  }))
+}
+
 function collectSelectedEquipment(registry: CompendiumRegistry, build: CharacterBuild): ResolvedEquipment[] {
   return build.equipmentSelections.flatMap(selection => {
     const entity = asEquipment(findEntityByIdOrName(registry, selection.equipmentId))
@@ -512,6 +545,44 @@ function dedupeSpells(spells: ResolvedSpell[]): ResolvedSpell[] {
     if (seen.has(key)) return false
     seen.add(key)
     return true
+  })
+}
+
+function dedupeAttacks(attacks: ResolvedAttack[]): ResolvedAttack[] {
+  const seen = new Set<string>()
+  return attacks.filter(attack => {
+    const key = `${attack.attackId}:${attack.sourceLabels?.join('|') ?? ''}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function collectEquipmentModeAttacks(
+  registry: CompendiumRegistry,
+  equipmentItems: ResolvedEquipment[],
+): ResolvedAttack[] {
+  return equipmentItems.flatMap(item => {
+    const entity = asEquipment(findEntityByIdOrName(registry, item.equipmentId))
+    if (!entity?.weaponModes?.length) return []
+    return entity.weaponModes.flatMap(mode => {
+      if (!mode.damage) return []
+      const notes = [
+        ...(mode.range ? [`Range: ${mode.range}`] : []),
+        ...(mode.rateOfFire ? [`Rate of Fire: ${mode.rateOfFire}`] : []),
+        ...(mode.payloadType ? [`Payload: ${mode.payloadType}${mode.payloadCapacity != null ? ` ${mode.payloadCapacity}` : ''}`] : []),
+        ...(mode.notes ?? []),
+      ]
+      const attack: ResolvedAttack = {
+        attackId: `${entity.id}:${mode.id}`,
+        name: `${entity.name} (${mode.label})`,
+        attackFamily: 'weapon',
+        damage: mode.damage,
+      }
+      if (item.sourceLabels?.length) attack.sourceLabels = item.sourceLabels
+      if (notes.length) attack.notes = notes
+      return [attack]
+    })
   })
 }
 
@@ -807,8 +878,10 @@ export function resolveCharacterBuild({ registry, build }: ResolveCharacterInput
   const selectedPowers = collectSelectedPowers(registry, build, sourceContexts)
   const directSpells = collectDirectSpells(registry, sourceContexts)
   const selectedSpells = collectSelectedSpells(registry, build, sourceContexts)
+  const directAttacks = collectDirectAttacks(registry, sourceContexts)
   const directEquipment = sourceContexts.flatMap(context => collectDirectEquipment(registry, context.source.name, context.grants))
   const selectedEquipment = collectSelectedEquipment(registry, build)
+  const equipmentAttacks = collectEquipmentModeAttacks(registry, [...directEquipment, ...selectedEquipment])
   const availableChoices = sourceContexts.flatMap(context => collectChoiceSlots(context.source.name, context.grants))
   const validation = collectValidationIssues(registry, build, race, rcc, occ, sourceContexts)
 
@@ -821,7 +894,7 @@ export function resolveCharacterBuild({ registry, build }: ResolveCharacterInput
     skills: dedupeSkills([...directSkills, ...selectedSkills]),
     powers: dedupePowers([...directPowers, ...selectedPowers]),
     spells: dedupeSpells([...directSpells, ...selectedSpells]),
-    attacks: [] satisfies ResolvedAttack[],
+    attacks: dedupeAttacks([...directAttacks, ...equipmentAttacks]),
     equipment: dedupeEquipment([...directEquipment, ...selectedEquipment]),
     modifiers: modifiers.map(modifier => ({
       ...modifier,
@@ -837,7 +910,7 @@ export function resolveCharacterBuild({ registry, build }: ResolveCharacterInput
         sourceLabels: sources.map(source => source.name),
         notes: [
           `Resolved sources through level ${level}.`,
-          'Applied direct grants, unlocked progression modifiers, power/spell grants, equipment loadout, and choice slots.',
+          'Applied direct grants, unlocked progression modifiers, power/spell/attack grants, equipment loadout, and choice slots.',
           'Computed base skill totals using imported base percent, per-level growth, source bonuses, and IQ bonus.',
         ],
       },

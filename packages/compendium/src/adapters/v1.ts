@@ -1,6 +1,7 @@
 import type {
   ActionProfile,
   ChoiceSlot,
+  CompendiumAttack,
   CompendiumEquipment,
   CompendiumOcc,
   CompendiumPower,
@@ -86,6 +87,7 @@ export interface V1RaceRaw {
     rccOccId?: string
   }
   abilities?: string[]
+  naturalAttacks?: V1NaturalAttackRaw[]
 }
 
 export interface V1OccRaw {
@@ -140,6 +142,7 @@ export interface V1OccRaw {
       notes?: string
     }
   } | null
+  naturalAttacks?: V1NaturalAttackRaw[]
   notes?: string[]
 }
 
@@ -231,6 +234,11 @@ type V1CustomSpellRaw = {
   saveType?: string | null
   saveDifficulty?: number | null
   desc?: string | null
+}
+
+type V1NaturalAttackRaw = {
+  name?: string
+  damage?: string
 }
 
 type V1WeaponPayloadRaw = {
@@ -776,6 +784,50 @@ function mapDamageScale(raw?: string): DamageProfile['scale'] {
   return 'special'
 }
 
+function inferDamageScaleFromText(text?: string | null): DamageProfile['scale'] {
+  const normalized = String(text ?? '').toLowerCase()
+  if (normalized.includes(' md') || normalized.includes('mdc')) return 'mdc'
+  if (normalized.includes(' sdc')) return 'sdc'
+  return 'special'
+}
+
+function adaptNaturalAttack(prefix: string, raw: V1NaturalAttackRaw): CompendiumAttack | null {
+  if (!raw.name || !raw.damage) return null
+  const attackId = `${prefix}-attack-${String(raw.name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`
+  const damage: DamageProfile = {
+    formula: raw.damage,
+  }
+  const scale = inferDamageScaleFromText(raw.damage)
+  if (scale) damage.scale = scale
+  const attack: CompendiumAttack = {
+    id: attackId,
+    kind: 'attack',
+    name: raw.name,
+    source: {
+      book: 'Imported natural attack from v1 content',
+      page: null,
+    },
+    attackFamily: 'natural',
+    damage,
+  }
+  const rangeMatch = String(raw.damage).match(/\(range\s+([^)]+)\)/i)
+  if (rangeMatch?.[1]) attack.range = rangeMatch[1].trim()
+  return attack
+}
+
+function mapNaturalAttackGrants(prefix: string, attacks?: V1NaturalAttackRaw[]): Grant[] {
+  if (!Array.isArray(attacks) || attacks.length === 0) return []
+  return attacks.flatMap(attack => {
+    const entity = adaptNaturalAttack(prefix, attack)
+    if (!entity) return []
+    return [{
+      id: `${entity.id}-grant`,
+      kind: 'grant_attack',
+      attackId: entity.id,
+    } satisfies Grant]
+  })
+}
+
 function mapMeasurement(raw?: V1MeasurementRaw): { value: number; unit: string } | null {
   if (!raw) return null
   if (typeof raw.value !== 'number' || !Number.isFinite(raw.value) || !raw.unit) return null
@@ -898,6 +950,7 @@ export function adaptV1Race(raw: V1RaceRaw): CompendiumRace {
     grants: [
       ...mapV1GrantedSkills(raw.id, raw.skills?.granted),
       ...mapV1PsionicGrants(raw.id, raw.psionics),
+      ...mapNaturalAttackGrants(raw.id, raw.naturalAttacks),
     ],
     modifiers: [
       ...mapV1SavesToModifiers(raw.id, raw.modifiers?.saves),
@@ -928,6 +981,7 @@ export function adaptV1OccLike(raw: V1OccRaw): CompendiumOcc | CompendiumRcc {
       ...mapV1GrantedSkills(raw.id, raw.skills?.granted),
       ...mapV1PsionicGrants(raw.id, raw.psionics),
       ...mapV1SpellGrants(raw.id, raw.spells),
+      ...mapNaturalAttackGrants(raw.id, raw.naturalAttacks),
     ],
     modifiers: [
       ...mapV1SavesToModifiers(raw.id, raw.bonuses?.saves),
@@ -1120,15 +1174,17 @@ export function adaptV1Spell(raw: V1SpellRaw): CompendiumSpell {
   return spell
 }
 
-export function adaptV1RaceExtraEntities(raw: V1RaceRaw): Array<CompendiumPower | CompendiumSpell> {
+export function adaptV1RaceExtraEntities(raw: V1RaceRaw): Array<CompendiumPower | CompendiumSpell | CompendiumAttack> {
   return [
     ...((raw.psionics?.customPowers ?? []).map(adaptCustomPower).filter(Boolean) as CompendiumPower[]),
+    ...((raw.naturalAttacks ?? []).map(attack => adaptNaturalAttack(raw.id, attack)).filter(Boolean) as CompendiumAttack[]),
   ]
 }
 
-export function adaptV1OccLikeExtraEntities(raw: V1OccRaw): Array<CompendiumPower | CompendiumSpell> {
+export function adaptV1OccLikeExtraEntities(raw: V1OccRaw): Array<CompendiumPower | CompendiumSpell | CompendiumAttack> {
   return [
     ...((raw.psionics?.customPowers ?? []).map(adaptCustomPower).filter(Boolean) as CompendiumPower[]),
     ...((raw.spells?.customSpells ?? []).map(adaptCustomSpell).filter(Boolean) as CompendiumSpell[]),
+    ...((raw.naturalAttacks ?? []).map(attack => adaptNaturalAttack(raw.id, attack)).filter(Boolean) as CompendiumAttack[]),
   ]
 }
