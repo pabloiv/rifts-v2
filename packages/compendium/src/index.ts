@@ -1,18 +1,20 @@
 import type { CompendiumEntity, EntityKind } from '@rifts-v2/schema'
-import { createCompendiumRegistry } from './registry'
+import { createCompendiumRegistry } from './registry.ts'
 
 export {
   adaptV1OccLike,
   adaptV1Race,
   adaptV1Skill,
-} from './adapters/v1'
+} from './adapters/v1.ts'
 export type {
   V1OccRaw,
   V1RaceRaw,
   V1SkillRaw,
-} from './adapters/v1'
-export { createCompendiumRegistry } from './registry'
-export type { CompendiumRegistry } from './registry'
+} from './adapters/v1.ts'
+export { createCompendiumRegistry } from './registry.ts'
+export type { CompendiumRegistry } from './registry.ts'
+export { adaptV1Snapshot } from './snapshot.ts'
+export type { V1CompendiumSnapshot } from './snapshot.ts'
 
 const ENTITY_LABELS: EntityKind[] = [
   'race',
